@@ -28,11 +28,25 @@ cd backend
 python -m venv .venv
 .venv\Scripts\activate      # Windows
 pip install -r requirements.txt
-copy .env.example .env      # then edit DATABASE_URL / SECRET_KEY
+copy .env.example .env      # DATABASE_URL already matches docker-compose.yml;
+                             # set your own SECRET_KEY, and RESEND_API_KEY /
+                             # GOOGLE_CLIENT_ID if you need those features working
 ```
 
-Make sure a PostgreSQL database matching `DATABASE_URL` exists, then apply
-migrations:
+You need a PostgreSQL database matching `DATABASE_URL` to exist. Easiest way
+— run one locally with Docker (no account, no cloud resource to provision
+per-developer):
+
+```bash
+docker compose up -d
+```
+
+This starts Postgres on `localhost:5432` with the exact user/password/db
+name already in `.env.example`, so the default `DATABASE_URL` works as-is.
+(No Docker? Point `DATABASE_URL` at any Postgres instance you have —
+a native local install, or a cloud one.)
+
+Then apply migrations:
 
 ```bash
 alembic upgrade head
