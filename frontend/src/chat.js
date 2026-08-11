@@ -2,6 +2,7 @@ import './style.css';
 import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket } from './api.js';
 import { isNightTime } from './nightGate.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
+import { initThemeToggle } from './theme.js';
 
 if (!requireAuth()) {
   // requireAuth already redirected to /index.html
@@ -13,6 +14,7 @@ if (!requireAuth()) {
 
 async function init() {
   watchForClose();
+  initThemeToggle(document.getElementById('theme-toggle'));
 
   const params = new URLSearchParams(window.location.search);
   const roomId = params.get('id');

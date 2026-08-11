@@ -2,6 +2,7 @@ import './style.css';
 import { requireAuth, getUser, clearSession, listRooms, createRoom } from './api.js';
 import { isNightTime } from './nightGate.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
+import { initThemeToggle } from './theme.js';
 
 if (!requireAuth()) {
   // requireAuth already redirected to /index.html
@@ -13,6 +14,7 @@ if (!requireAuth()) {
 
 function init() {
   watchForClose();
+  initThemeToggle(document.getElementById('theme-toggle'));
 
   const user = getUser();
   document.getElementById('user-tag').textContent = user?.display_name ? `hi, ${user.display_name}` : '';

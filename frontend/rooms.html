@@ -5,13 +5,20 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>nightcord — rooms</title>
+    <script>
+      // Applied before first paint so there's no flash of the wrong theme.
+      if (localStorage.getItem('nightcord_theme') === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
   </head>
   <body>
     <div class="screen">
       <div class="topbar">
         <span class="logo">NIGHTCORD</span>
-        <div style="display: flex; align-items: center; gap: 14px;">
+        <div class="topbar-actions">
           <span class="user-tag" id="user-tag"></span>
+          <button class="btn theme-toggle" id="theme-toggle" type="button"></button>
           <button class="btn btn-small" id="logout-btn" type="button">Logout</button>
         </div>
       </div>

@@ -2,8 +2,11 @@
 
 :root {
   --ink: #1a1a1a;
+  --ink-soft: #5a5a5a;
   --bg: #f6f1e3;
   --panel: #ffffff;
+  --panel-hover: #fafafa;
+  --grid-line: rgba(26, 26, 26, 0.04);
   --primary: #4a64e0;
   --primary-dark: #2f44b8;
   --accent: #f2b705;
@@ -14,6 +17,20 @@
 
   --font-display: 'Press Start 2P', monospace;
   --font-body: 'VT323', 'Courier New', monospace;
+}
+
+[data-theme='dark'] {
+  --ink: #ede8d8;
+  --ink-soft: #9aa0b8;
+  --bg: #14141c;
+  --panel: #1e1e2a;
+  --panel-hover: #272736;
+  --grid-line: rgba(237, 232, 216, 0.05);
+  --primary: #6c82ff;
+  --primary-dark: #9db0ff;
+  --accent: #ffce54;
+  --danger: #ff6b5b;
+  --good: #4ecb8a;
 }
 
 * {
@@ -35,8 +52,8 @@ body {
   min-height: 100vh;
   /* faint pixel grid */
   background-image:
-    linear-gradient(rgba(26, 26, 26, 0.04) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(26, 26, 26, 0.04) 1px, transparent 1px);
+    linear-gradient(var(--grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
   background-size: 24px 24px;
   background-position: -1px -1px;
   background-attachment: fixed;
@@ -92,7 +109,24 @@ a {
 
 .topbar .user-tag {
   font-size: 1.1rem;
-  color: #4a4a4a;
+  color: var(--ink-soft);
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.theme-toggle {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+  line-height: 1;
 }
 
 /* --- panels / cards --- */
@@ -127,7 +161,7 @@ a {
 }
 
 .btn:hover {
-  background: #fafafa;
+  background: var(--panel-hover);
 }
 
 .btn:active {
@@ -222,7 +256,7 @@ a {
 
 .hint {
   font-size: 0.95rem;
-  color: #5a5a5a;
+  color: var(--ink-soft);
   margin-top: -8px;
   margin-bottom: 16px;
 }
@@ -271,7 +305,7 @@ a {
 }
 
 .room-item:hover {
-  background: #fafafa;
+  background: var(--panel-hover);
 }
 
 .room-item .room-name {
@@ -288,7 +322,7 @@ a {
 
 .empty-state {
   font-size: 1.15rem;
-  color: #6a6a6a;
+  color: var(--ink-soft);
   text-align: center;
   padding: 16px 0;
 }
@@ -330,7 +364,7 @@ a {
 }
 
 .msg .msg-meta .msg-time {
-  color: #8a8a8a;
+  color: var(--ink-soft);
   margin-left: 8px;
 }
 
@@ -367,7 +401,7 @@ a {
 .connection-status {
   font-size: 0.95rem;
   margin-top: 8px;
-  color: #6a6a6a;
+  color: var(--ink-soft);
 }
 
 .connection-status.connected { color: var(--good); }
@@ -401,7 +435,7 @@ a {
 
 .closed-sub {
   font-size: 1.1rem;
-  color: #5a5a5a;
+  color: var(--ink-soft);
   margin: 12px 0 20px;
 }
 
@@ -410,7 +444,7 @@ a {
   font-size: 0.6rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  color: #5a5a5a;
+  color: var(--ink-soft);
   margin: 0 0 10px;
 }
 
