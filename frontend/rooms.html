@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nightcord — rooms</title>
+  </head>
+  <body>
+    <div class="screen">
+      <div class="topbar">
+        <span class="logo">NIGHTCORD</span>
+        <div style="display: flex; align-items: center; gap: 14px;">
+          <span class="user-tag" id="user-tag"></span>
+          <button class="btn btn-small" id="logout-btn" type="button">Logout</button>
+        </div>
+      </div>
+
+      <div class="stack">
+        <div class="panel">
+          <h2 style="margin-bottom: 16px;">Study Rooms</h2>
+          <div class="error-box" id="error-box"></div>
+          <ul class="room-list" id="room-list"></ul>
+          <p class="empty-state" id="empty-state" style="display: none;">No rooms yet — start one below.</p>
+        </div>
+
+        <div class="panel">
+          <h3 style="margin-bottom: 14px;">Start a new room</h3>
+          <form id="create-room-form">
+            <div class="field">
+              <label for="room-name">Room name</label>
+              <input type="text" id="room-name" required placeholder="e.g. late-night-calc-study" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-block" id="create-submit">Create Room</button>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/rooms.js"></script>
+  </body>
+</html>

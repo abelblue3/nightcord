@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nightcord — room</title>
+  </head>
+  <body>
+    <div class="screen">
+      <div class="topbar">
+        <a href="/rooms.html" class="btn btn-small" style="text-decoration: none;">&lt; Rooms</a>
+        <span class="logo" id="room-title">ROOM</span>
+        <button class="btn btn-small" id="logout-btn" type="button">Logout</button>
+      </div>
+
+      <div class="chat-shell">
+        <div class="error-box" id="error-box"></div>
+        <div class="chat-log" id="chat-log"></div>
+        <div class="connection-status" id="connection-status">connecting…</div>
+        <form class="chat-input-row" id="chat-form">
+          <input type="text" id="chat-input" autocomplete="off" placeholder="say something…" maxlength="2000" />
+          <button type="submit" class="btn btn-primary" id="chat-send">Send</button>
+        </form>
+      </div>
+    </div>
+
+    <script type="module" src="/src/chat.js"></script>
+  </body>
+</html>
