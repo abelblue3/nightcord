@@ -5,9 +5,9 @@ export default defineConfig({
   build: {
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        rooms: resolve(__dirname, 'rooms.html'),
-        room: resolve(__dirname, 'room.html'),
+        main: resolve(import.meta.dirname, 'index.html'),
+        rooms: resolve(import.meta.dirname, 'rooms.html'),
+        room: resolve(import.meta.dirname, 'room.html'),
       },
     },
   },
