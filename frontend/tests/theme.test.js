@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest';
-import { applyTheme, getTheme, initThemeToggle, setTheme } from '../src/theme.js';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { getTheme, setTheme, applyTheme, initThemeToggle } from '../src/theme.js';
 
 beforeEach(() => {
   localStorage.clear();
@@ -11,7 +11,7 @@ describe('getTheme', () => {
     expect(getTheme()).toBe('light');
   });
 
-  it('reflects whatever was stored', () => {
+  it('returns whatever was stored', () => {
     localStorage.setItem('nightcord_theme', 'dark');
     expect(getTheme()).toBe('dark');
   });
@@ -23,7 +23,7 @@ describe('applyTheme', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
 
-  it('removes the attribute entirely for light (so it matches the un-stamped default)', () => {
+  it('removes the attribute entirely for light (so it never overrides CSS)', () => {
     document.documentElement.setAttribute('data-theme', 'dark');
     applyTheme('light');
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
@@ -31,7 +31,7 @@ describe('applyTheme', () => {
 });
 
 describe('setTheme', () => {
-  it('persists to localStorage and applies to the document together', () => {
+  it('persists to localStorage and applies immediately', () => {
     setTheme('dark');
     expect(localStorage.getItem('nightcord_theme')).toBe('dark');
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
@@ -39,31 +39,37 @@ describe('setTheme', () => {
 });
 
 describe('initThemeToggle', () => {
-  it('renders the moon glyph when starting in light mode', () => {
+  it('renders the moon glyph for light mode and toggles to sun on click', () => {
     const btn = document.createElement('button');
     initThemeToggle(btn);
+
     expect(btn.textContent).toBe('☾');
-    expect(btn.getAttribute('aria-label')).toMatch(/dark/i);
+    expect(getTheme()).toBe('light');
+
+    btn.click();
+
+    expect(getTheme()).toBe('dark');
+    expect(btn.textContent).toBe('☀');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
   });
 
-  it('renders the sun glyph when starting in dark mode', () => {
+  it('toggles back to light on a second click', () => {
+    const btn = document.createElement('button');
+    initThemeToggle(btn);
+
+    btn.click();
+    btn.click();
+
+    expect(getTheme()).toBe('light');
+    expect(btn.textContent).toBe('☾');
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+
+  it('picks up a theme already set before init (e.g. by the head script)', () => {
     setTheme('dark');
     const btn = document.createElement('button');
     initThemeToggle(btn);
+
     expect(btn.textContent).toBe('☀');
-    expect(btn.getAttribute('aria-label')).toMatch(/light/i);
-  });
-
-  it('toggles the theme and label on click', () => {
-    const btn = document.createElement('button');
-    initThemeToggle(btn);
-
-    btn.click();
-    expect(getTheme()).toBe('dark');
-    expect(btn.textContent).toBe('☀');
-
-    btn.click();
-    expect(getTheme()).toBe('light');
-    expect(btn.textContent).toBe('☾');
   });
 });

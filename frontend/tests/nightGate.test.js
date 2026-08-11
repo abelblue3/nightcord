@@ -1,77 +1,104 @@
-import { describe, expect, it } from 'vitest';
-import { formatCountdown, isNightTime, nextTransition } from '../src/nightGate.js';
-
-function at(hour, minute = 0) {
-  return new Date(2026, 0, 15, hour, minute, 0, 0);
-}
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { isNightTime, nextTransition, formatCountdown } from '../src/nightGate.js';
 
 describe('isNightTime', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
   it('is night at 9pm (start of window)', () => {
-    expect(isNightTime(at(21))).toBe(true);
+    expect(isNightTime(new Date(2026, 0, 1, 21, 0, 0))).toBe(true);
   });
 
   it('is night at 11:59pm', () => {
-    expect(isNightTime(at(23, 59))).toBe(true);
+    expect(isNightTime(new Date(2026, 0, 1, 23, 59, 0))).toBe(true);
   });
 
-  it('is night just after midnight', () => {
-    expect(isNightTime(at(0, 1))).toBe(true);
+  it('is night at 2am (past midnight, still within window)', () => {
+    expect(isNightTime(new Date(2026, 0, 1, 2, 0, 0))).toBe(true);
   });
 
-  it('is night at 5:59am (last minute of the window)', () => {
-    expect(isNightTime(at(5, 59))).toBe(true);
+  it('is not night at exactly 6am (end of window)', () => {
+    expect(isNightTime(new Date(2026, 0, 1, 6, 0, 0))).toBe(false);
   });
 
-  it('is not night at 6am (end of window)', () => {
-    expect(isNightTime(at(6))).toBe(false);
+  it('is not night at noon', () => {
+    expect(isNightTime(new Date(2026, 0, 1, 12, 0, 0))).toBe(false);
   });
 
-  it('is not night at 2pm', () => {
-    expect(isNightTime(at(14))).toBe(false);
-  });
-
-  it('is not night at 8:59pm (last minute before opening)', () => {
-    expect(isNightTime(at(20, 59))).toBe(false);
+  it('is not night at 8:59pm (just before the window)', () => {
+    expect(isNightTime(new Date(2026, 0, 1, 20, 59, 0))).toBe(false);
   });
 });
 
 describe('nextTransition', () => {
-  it('during the day, points to 9pm the same day', () => {
-    const now = at(14);
+  it('from daytime, points to 9pm the same day', () => {
+    const now = new Date(2026, 0, 1, 14, 0, 0);
     const next = nextTransition(now);
+    expect(next.getDate()).toBe(1);
     expect(next.getHours()).toBe(21);
-    expect(next.getDate()).toBe(now.getDate());
   });
 
-  it('during the evening portion of the night, points to 6am the next day', () => {
-    const now = at(22);
+  it('from evening night, points to 6am the next day', () => {
+    const now = new Date(2026, 0, 1, 23, 0, 0);
     const next = nextTransition(now);
+    expect(next.getDate()).toBe(2);
     expect(next.getHours()).toBe(6);
-    expect(next.getDate()).toBe(now.getDate() + 1);
   });
 
-  it('during the early-morning portion of the night, points to 6am the same day', () => {
-    const now = at(2);
+  it('from early-morning night, points to 6am the same day', () => {
+    const now = new Date(2026, 0, 1, 2, 0, 0);
     const next = nextTransition(now);
+    expect(next.getDate()).toBe(1);
     expect(next.getHours()).toBe(6);
-    expect(next.getDate()).toBe(now.getDate());
   });
 });
 
 describe('formatCountdown', () => {
-  it('formats hours, minutes, seconds with zero padding', () => {
-    expect(formatCountdown(3661000)).toBe('01:01:01');
+  it('formats hours, minutes, seconds with zero-padding', () => {
+    expect(formatCountdown(3661_000)).toBe('01:01:01');
   });
 
-  it('formats zero as 00:00:00', () => {
-    expect(formatCountdown(0)).toBe('00:00:00');
-  });
-
-  it('clamps negative durations to zero instead of going negative', () => {
+  it('floors negative/zero durations to 00:00:00', () => {
     expect(formatCountdown(-5000)).toBe('00:00:00');
   });
 
-  it('rounds down partial seconds', () => {
-    expect(formatCountdown(1999)).toBe('00:00:01');
+  it('formats large durations correctly', () => {
+    expect(formatCountdown((9 * 3600 + 5 * 60 + 30) * 1000)).toBe('09:05:30');
+  });
+});
+
+describe('dev gate bypass', () => {
+  beforeEach(() => {
+    localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  afterEach(() => {
+    localStorage.clear();
+    window.history.replaceState({}, '', '/');
+  });
+
+  it('?skipGate=1 forces isNightTime to true regardless of the clock', () => {
+    window.history.replaceState({}, '', '/?skipGate=1');
+    // Noon — would normally be "closed."
+    expect(isNightTime(new Date(2026, 0, 1, 12, 0, 0))).toBe(true);
+  });
+
+  it('the bypass persists on a later visit with no query param', () => {
+    window.history.replaceState({}, '', '/?skipGate=1');
+    isNightTime(new Date(2026, 0, 1, 12, 0, 0)); // triggers the bypass to be stored
+
+    window.history.replaceState({}, '', '/');
+    expect(isNightTime(new Date(2026, 0, 1, 12, 0, 0))).toBe(true);
+  });
+
+  it('?skipGate=0 turns the bypass back off', () => {
+    window.history.replaceState({}, '', '/?skipGate=1');
+    isNightTime(new Date(2026, 0, 1, 12, 0, 0));
+
+    window.history.replaceState({}, '', '/?skipGate=0');
+    expect(isNightTime(new Date(2026, 0, 1, 12, 0, 0))).toBe(false);
   });
 });

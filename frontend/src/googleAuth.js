@@ -14,11 +14,15 @@ export function renderGoogleButton(containerEl, onCredential) {
       callback: (response) => onCredential(response.credential),
     });
 
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+
     window.google.accounts.id.renderButton(containerEl, {
-      theme: 'outline',
+      theme: isDark ? 'filled_black' : 'outline',
       size: 'large',
-      width: 300,
+      shape: 'square',
+      logo_alignment: 'center',
       text: 'continue_with',
+      width: Math.round(containerEl.getBoundingClientRect().width) || 300,
     });
   }
 

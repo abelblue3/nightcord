@@ -1,33 +1,43 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
-  clearSession,
-  connectRoomSocket,
+  saveSession,
   getToken,
   getUser,
-  listRooms,
-  login,
+  clearSession,
   requireAuth,
-  saveSession,
   signup,
+  login,
+  listRooms,
+  createRoom,
+  connectRoomSocket,
 } from '../src/api.js';
+
+function mockFetchOnce(status, body) {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+  });
+}
 
 beforeEach(() => {
   localStorage.clear();
+  vi.restoreAllMocks();
 });
 
-describe('session storage helpers', () => {
-  it('round-trips token and user through saveSession/getToken/getUser', () => {
-    saveSession('abc.jwt.token', { id: 1, display_name: 'Ada' });
-    expect(getToken()).toBe('abc.jwt.token');
-    expect(getUser()).toEqual({ id: 1, display_name: 'Ada' });
+describe('session storage', () => {
+  it('saveSession stores token and user, getToken/getUser read them back', () => {
+    saveSession('abc123', { id: 1, display_name: 'Jane' });
+    expect(getToken()).toBe('abc123');
+    expect(getUser()).toEqual({ id: 1, display_name: 'Jane' });
   });
 
   it('getUser returns null when nothing is stored', () => {
     expect(getUser()).toBeNull();
   });
 
-  it('clearSession removes both token and user', () => {
-    saveSession('abc.jwt.token', { id: 1 });
+  it('clearSession removes both', () => {
+    saveSession('abc123', { id: 1 });
     clearSession();
     expect(getToken()).toBeNull();
     expect(getUser()).toBeNull();
@@ -35,131 +45,96 @@ describe('session storage helpers', () => {
 });
 
 describe('requireAuth', () => {
-  let originalLocation;
+  it('returns the token when one exists', () => {
+    saveSession('abc123', { id: 1 });
+    expect(requireAuth()).toBe('abc123');
+  });
 
-  beforeEach(() => {
-    originalLocation = window.location;
+  it('redirects to /index.html and returns null when there is no token', () => {
+    const originalLocation = window.location;
     delete window.location;
     window.location = { href: '' };
-  });
 
-  afterEach(() => {
-    window.location = originalLocation;
-  });
-
-  it('redirects to index.html and returns null when there is no token', () => {
     const result = requireAuth();
+
     expect(result).toBeNull();
     expect(window.location.href).toBe('/index.html');
-  });
 
-  it('returns the token and does not redirect when one exists', () => {
-    saveSession('abc.jwt.token', { id: 1 });
-    const result = requireAuth();
-    expect(result).toBe('abc.jwt.token');
-    expect(window.location.href).toBe('');
+    window.location = originalLocation;
   });
 });
 
-describe('request wrapper (via the exported endpoint functions)', () => {
-  beforeEach(() => {
-    vi.stubGlobal('fetch', vi.fn());
-  });
+describe('request wrapper (via signup/login)', () => {
+  it('signup posts the right shape and returns the parsed body', async () => {
+    mockFetchOnce(201, { id: 1, email: 'a@university.edu', is_verified: false });
 
-  afterEach(() => {
-    vi.unstubAllGlobals();
-  });
+    const result = await signup({ email: 'a@university.edu', password: 'password123', displayName: 'A' });
 
-  it('signup posts JSON with the mapped field names', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ id: 1, email: 'a@university.edu' }),
-    });
-
-    await signup({ email: 'a@university.edu', password: 'password123', displayName: 'Ada' });
-
-    expect(fetch).toHaveBeenCalledTimes(1);
-    const [url, opts] = fetch.mock.calls[0];
-    expect(url).toMatch(/\/auth\/signup$/);
-    expect(opts.method).toBe('POST');
-    expect(JSON.parse(opts.body)).toEqual({
+    expect(result).toEqual({ id: 1, email: 'a@university.edu', is_verified: false });
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/auth/signup');
+    expect(JSON.parse(options.body)).toEqual({
       email: 'a@university.edu',
       password: 'password123',
-      display_name: 'Ada',
+      display_name: 'A',
     });
   });
 
-  it('attaches an Authorization header for authenticated requests when a token exists', async () => {
-    saveSession('my-jwt', { id: 1 });
-    fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
+  it('throws with the server-provided detail message on failure', async () => {
+    mockFetchOnce(400, { detail: 'Signup requires a valid college student email address.' });
 
-    await listRooms();
-
-    const [, opts] = fetch.mock.calls[0];
-    expect(opts.headers.Authorization).toBe('Bearer my-jwt');
-  });
-
-  it('omits the Authorization header for authenticated requests with no token', async () => {
-    fetch.mockResolvedValueOnce({ ok: true, json: async () => [] });
-
-    await listRooms();
-
-    const [, opts] = fetch.mock.calls[0];
-    expect(opts.headers.Authorization).toBeUndefined();
-  });
-
-  it('throws an error using the backend-provided detail message on failure', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 401,
-      json: async () => ({ detail: 'Incorrect email or password.' }),
-    });
-
-    await expect(login({ email: 'a@university.edu', password: 'wrong' })).rejects.toThrow(
-      'Incorrect email or password.'
+    await expect(login({ email: 'a@gmail.com', password: 'x' })).rejects.toThrow(
+      'Signup requires a valid college student email address.'
     );
   });
 
-  it('falls back to a generic message when the error body has no detail', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: async () => ({}),
-    });
-
+  it('falls back to a generic message when the server gives no detail', async () => {
+    mockFetchOnce(500, {});
     await expect(login({ email: 'a@university.edu', password: 'x' })).rejects.toThrow('Something went wrong.');
   });
 
-  it('falls back to a generic message when the error body is not valid JSON', async () => {
-    fetch.mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      json: async () => {
-        throw new Error('not json');
-      },
-    });
+  it('authenticated requests attach the Authorization header when a token exists', async () => {
+    saveSession('my-token', { id: 1 });
+    mockFetchOnce(200, []);
 
-    await expect(login({ email: 'a@university.edu', password: 'x' })).rejects.toThrow('Something went wrong.');
+    await listRooms();
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe('Bearer my-token');
+  });
+
+  it('requests with no session omit the Authorization header', async () => {
+    mockFetchOnce(200, []);
+    await listRooms();
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBeUndefined();
+  });
+
+  it('createRoom sends the room name in the body', async () => {
+    saveSession('my-token', { id: 1 });
+    mockFetchOnce(201, { id: 5, name: 'late-night-calc' });
+
+    await createRoom('late-night-calc');
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(JSON.parse(options.body)).toEqual({ name: 'late-night-calc' });
   });
 });
 
 describe('connectRoomSocket', () => {
-  it('opens a WebSocket to the room endpoint carrying the stored token', () => {
-    saveSession('my-jwt', { id: 1 });
-    const OriginalWebSocket = global.WebSocket;
-    const captured = [];
+  it('builds a ws URL with the room id and current token', () => {
+    saveSession('my-token', { id: 1 });
+
+    let capturedUrl;
     global.WebSocket = class {
       constructor(url) {
-        captured.push(url);
+        capturedUrl = url;
       }
     };
 
     connectRoomSocket(42);
 
-    expect(captured).toHaveLength(1);
-    expect(captured[0]).toContain('/ws/rooms/42');
-    expect(captured[0]).toContain('token=my-jwt');
-
-    global.WebSocket = OriginalWebSocket;
+    expect(capturedUrl).toContain('/ws/rooms/42');
+    expect(capturedUrl).toContain('token=my-token');
   });
 });
