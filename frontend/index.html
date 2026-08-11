@@ -11,6 +11,7 @@
         document.documentElement.setAttribute('data-theme', 'dark');
       }
     </script>
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <div class="screen">
@@ -25,6 +26,9 @@
           </div>
 
           <div class="error-box" id="error-box"></div>
+
+          <div id="google-signin-btn" class="center-text" style="margin-bottom: 16px;"></div>
+          <p class="hint center-text" style="margin-top: -8px;">— or —</p>
 
           <form id="login-form">
             <div class="field">
@@ -54,6 +58,13 @@
             </div>
             <button type="submit" class="btn btn-primary btn-block" id="signup-submit">Join</button>
           </form>
+        </div>
+
+        <div class="panel" id="check-email-panel" style="display: none;">
+          <h2 style="margin-bottom: 12px;">Check your email</h2>
+          <p class="hint" id="check-email-text" style="margin-top: 0;"></p>
+          <button type="button" class="btn btn-block" id="resend-btn">Resend link</button>
+          <button type="button" class="btn btn-block" id="back-to-login-btn" style="margin-top: 10px;">Back to login</button>
         </div>
       </div>
     </div>

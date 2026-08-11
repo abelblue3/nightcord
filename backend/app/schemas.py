@@ -15,6 +15,7 @@ class UserOut(BaseModel):
     email: EmailStr
     display_name: str
     timezone: str | None
+    is_verified: bool
 
     class Config:
         from_attributes = True
@@ -28,6 +29,23 @@ class LoginRequest(BaseModel):
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    user: UserOut
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class GoogleAuthRequest(BaseModel):
+    credential: str
+
+
+class MessageResponse(BaseModel):
+    message: str
 
 
 class RoomCreate(BaseModel):

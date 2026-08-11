@@ -71,9 +71,47 @@ Other useful commands: `alembic current` (what revision the DB is on),
 
 ### Endpoints
 
-- `POST /auth/signup` — create account (requires an allowed student email domain, see `ALLOWED_EMAIL_DOMAINS`)
-- `POST /auth/login` — get a JWT access token
+- `POST /auth/signup` — create account (requires an allowed student email domain, see `ALLOWED_EMAIL_DOMAINS`); sends a verification email, account is inactive until verified
+- `POST /auth/login` — get a JWT access token (rejects unverified accounts)
+- `POST /auth/verify-email` — activate an account from its emailed verification link, returns a JWT
+- `POST /auth/resend-verification` — request a new verification link
+- `POST /auth/google` — sign in/up via Google OAuth (`.edu`-restricted, auto-verified)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth required)
 - `GET /rooms/{room_id}/messages` — chat history for a room (auth required)
 - `WS /ws/rooms/{room_id}?token=<jwt>` — realtime chat over WebSocket
 - `GET /health` — health check
+
+### Testing
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+
+Tests run against an isolated in-memory SQLite database (never the real
+Postgres database) and mock both the Resend email API and Google token
+verification, so the suite needs no external services or `.env` file.
+
+## Frontend
+
+Stack: vanilla HTML/CSS/JS + Vite, no framework — self-hosted retro pixel
+fonts, dark mode, and a client-side night-time gate.
+
+### Setup
+
+```bash
+cd frontend
+npm install
+copy .env.example .env      # then edit VITE_API_URL / VITE_WS_URL if needed
+npm run dev
+```
+
+### Testing
+
+```bash
+npm test
+```
+
+Unit tests (Vitest + jsdom) cover the night-time gate logic, theme
+persistence, and the API client — the parts of the frontend that are pure
+logic rather than DOM wiring.

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nightcord — verify</title>
+    <script>
+      // Applied before first paint so there's no flash of the wrong theme.
+      if (localStorage.getItem('nightcord_theme') === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      }
+    </script>
+  </head>
+  <body>
+    <div class="screen">
+      <div class="stack">
+        <h1 class="center-text">NIGHTCORD<span class="blink">_</span></h1>
+
+        <div class="panel">
+          <h2 class="center-text" id="verify-heading">Verifying…</h2>
+          <p class="hint center-text" id="verify-text">Hang on a second.</p>
+          <div class="error-box" id="error-box"></div>
+          <a href="/index.html" class="btn btn-block" id="verify-action" style="display: none; text-decoration: none;">Go to login</a>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/verify.js"></script>
+  </body>
+</html>

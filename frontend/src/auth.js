@@ -1,7 +1,8 @@
 import './style.css';
-import { signup, login, saveSession, getToken } from './api.js';
+import { signup, login, saveSession, getToken, resendVerification, googleAuth } from './api.js';
 import { isNightTime } from './nightGate.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
+import { renderGoogleButton } from './googleAuth.js';
 
 if (!isNightTime()) {
   renderClosedScreen(document.querySelector('.screen'));
@@ -21,7 +22,11 @@ function init() {
   const tabSignup = document.getElementById('tab-signup');
   const loginForm = document.getElementById('login-form');
   const signupForm = document.getElementById('signup-form');
+  const checkEmailPanel = document.getElementById('check-email-panel');
+  const checkEmailText = document.getElementById('check-email-text');
   const errorBox = document.getElementById('error-box');
+
+  let pendingEmail = '';
 
   function showError(message) {
     errorBox.textContent = message;
@@ -35,11 +40,20 @@ function init() {
 
   function showTab(which) {
     clearError();
+    checkEmailPanel.style.display = 'none';
     const isLogin = which === 'login';
     tabLogin.classList.toggle('active', isLogin);
     tabSignup.classList.toggle('active', !isLogin);
     loginForm.style.display = isLogin ? 'block' : 'none';
     signupForm.style.display = isLogin ? 'none' : 'block';
+  }
+
+  function showCheckEmail(email) {
+    pendingEmail = email;
+    signupForm.style.display = 'none';
+    loginForm.style.display = 'none';
+    checkEmailPanel.style.display = 'block';
+    checkEmailText.textContent = `We sent a verification link to ${email}. Click it to activate your account, then come back and log in.`;
   }
 
   tabLogin.addEventListener('click', () => showTab('login'));
@@ -49,6 +63,16 @@ function init() {
     saveSession(token, user);
     window.location.href = '/rooms.html';
   }
+
+  renderGoogleButton(document.getElementById('google-signin-btn'), async (credential) => {
+    clearError();
+    try {
+      const { access_token, user } = await googleAuth(credential);
+      await afterAuth(access_token, user);
+    } catch (err) {
+      showError(err.message);
+    }
+  });
 
   loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -60,8 +84,8 @@ function init() {
     const password = document.getElementById('login-password').value;
 
     try {
-      const { access_token } = await login({ email, password });
-      await afterAuth(access_token, { email });
+      const { access_token, user } = await login({ email, password });
+      await afterAuth(access_token, user);
     } catch (err) {
       showError(err.message);
     } finally {
@@ -80,13 +104,31 @@ function init() {
     const password = document.getElementById('signup-password').value;
 
     try {
-      const user = await signup({ email, password, displayName });
-      const { access_token } = await login({ email, password });
-      await afterAuth(access_token, user);
+      await signup({ email, password, displayName });
+      showCheckEmail(email);
     } catch (err) {
       showError(err.message);
     } finally {
       submitBtn.disabled = false;
     }
   });
+
+  document.getElementById('resend-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('resend-btn');
+    btn.disabled = true;
+    btn.textContent = 'Sending…';
+    try {
+      await resendVerification(pendingEmail);
+      btn.textContent = 'Sent!';
+    } catch {
+      btn.textContent = 'Resend link';
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = 'Resend link';
+      }, 3000);
+    }
+  });
+
+  document.getElementById('back-to-login-btn').addEventListener('click', () => showTab('login'));
 }

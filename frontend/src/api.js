@@ -87,6 +87,18 @@ export async function getRoomMessages(roomId) {
   return request(`/rooms/${roomId}/messages`, { auth: true });
 }
 
+export async function verifyEmail(token) {
+  return request('/auth/verify-email', { method: 'POST', body: { token } });
+}
+
+export async function resendVerification(email) {
+  return request('/auth/resend-verification', { method: 'POST', body: { email } });
+}
+
+export async function googleAuth(credential) {
+  return request('/auth/google', { method: 'POST', body: { credential } });
+}
+
 export function connectRoomSocket(roomId) {
   const token = getToken();
   return new WebSocket(`${WS_URL}/ws/rooms/${roomId}?token=${encodeURIComponent(token)}`);

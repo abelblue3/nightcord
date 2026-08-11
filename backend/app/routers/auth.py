@@ -1,10 +1,29 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import create_access_token, hash_password, is_allowed_student_email, verify_password
+from app.auth import (
+    create_access_token,
+    generate_verification_token,
+    hash_password,
+    is_allowed_student_email,
+    verify_google_id_token,
+    verify_password,
+)
 from app.database import get_db
-from app.models import User
-from app.schemas import LoginRequest, Token, UserCreate, UserOut
+from app.email import send_verification_email
+from app.models import User, as_utc
+from app.schemas import (
+    GoogleAuthRequest,
+    LoginRequest,
+    MessageResponse,
+    ResendVerificationRequest,
+    Token,
+    UserCreate,
+    UserOut,
+    VerifyEmailRequest,
+)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -20,26 +39,127 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> User:
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
 
+    token, expires_at = generate_verification_token()
     user = User(
         email=payload.email,
         hashed_password=hash_password(payload.password),
         display_name=payload.display_name,
         timezone=payload.timezone,
+        is_verified=False,
+        verification_token=token,
+        verification_token_expires_at=expires_at,
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    send_verification_email(user.email, token)
     return user
 
 
 @router.post("/login", response_model=Token)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.email == payload.email).first()
+
+    if user and user.hashed_password is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="This account uses Google Sign-In — use the Google button instead of a password.",
+        )
+
     if not user or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
         )
 
+    if not user.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Please verify your email before logging in — check your inbox for the link.",
+        )
+
     token = create_access_token(subject=user.email)
-    return Token(access_token=token)
+    return Token(access_token=token, user=user)
+
+
+@router.post("/verify-email", response_model=Token)
+def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> Token:
+    user = db.query(User).filter(User.verification_token == payload.token).first()
+
+    if not user or not user.verification_token_expires_at:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link.")
+
+    if as_utc(user.verification_token_expires_at) < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This verification link has expired. Request a new one.",
+        )
+
+    user.is_verified = True
+    user.verification_token = None
+    user.verification_token_expires_at = None
+    db.commit()
+
+    token = create_access_token(subject=user.email)
+    return Token(access_token=token, user=user)
+
+
+@router.post("/google", response_model=Token)
+def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token:
+    claims = verify_google_id_token(payload.credential)
+
+    email = claims.get("email")
+    if not email or not claims.get("email_verified"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Google did not return a verified email address.",
+        )
+
+    if not is_allowed_student_email(email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sign-in requires a valid college student email address.",
+        )
+
+    google_id = claims["sub"]
+    user = db.query(User).filter(User.google_id == google_id).first()
+
+    if not user:
+        user = db.query(User).filter(User.email == email).first()
+        if user and user.google_id and user.google_id != google_id:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
+
+    if user:
+        user.google_id = google_id
+        user.is_verified = True
+    else:
+        user = User(
+            email=email,
+            hashed_password=None,
+            google_id=google_id,
+            display_name=claims.get("name") or email.split("@")[0],
+            is_verified=True,
+        )
+        db.add(user)
+
+    db.commit()
+    db.refresh(user)
+
+    token = create_access_token(subject=user.email)
+    return Token(access_token=token, user=user)
+
+
+@router.post("/resend-verification", response_model=MessageResponse)
+def resend_verification(payload: ResendVerificationRequest, db: Session = Depends(get_db)) -> MessageResponse:
+    user = db.query(User).filter(User.email == payload.email).first()
+
+    if user and not user.is_verified:
+        token, expires_at = generate_verification_token()
+        user.verification_token = token
+        user.verification_token_expires_at = expires_at
+        db.commit()
+        send_verification_email(user.email, token)
+
+    # Same response whether or not the account exists, so we don't leak which emails are registered.
+    return MessageResponse(message="If that account needs verifying, a new link has been sent.")

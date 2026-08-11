@@ -9,3 +9,5 @@ passlib==1.7.4
 bcrypt==4.0.1
 python-dotenv==1.0.1
 alembic==1.13.3
+resend==2.5.1
+google-auth==2.35.0
