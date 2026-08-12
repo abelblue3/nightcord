@@ -1,3 +1,4 @@
+import './sentry.js';
 import './style.css';
 import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket } from './api.js';
 import { isNightTime } from './nightGate.js';

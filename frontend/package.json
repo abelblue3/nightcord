@@ -13,5 +13,8 @@
     "jsdom": "^30.0.1",
     "vite": "^8.2.0",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "@sentry/browser": "^10.70.0"
   }
 }

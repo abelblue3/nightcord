@@ -1,3 +1,4 @@
+import './sentry.js';
 import './style.css';
 import { saveSession, verifyEmail } from './api.js';
 

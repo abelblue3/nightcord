@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     email_from: str = "nightcord <onboarding@resend.dev>"
     frontend_url: str = "http://localhost:5173"
     google_client_id: str = ""
+    sentry_dsn: str = ""
+    environment: str = "development"
 
     @property
     def allowed_email_domain_list(self) -> list[str]:

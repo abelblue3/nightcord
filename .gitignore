@@ -5,6 +5,6 @@ __pycache__/
 *.db
 backend/.pytest_cache/
 
-frontend/node_modules/
+node_modules/
 frontend/dist/
 frontend/.env

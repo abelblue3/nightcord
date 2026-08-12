@@ -1,3 +1,4 @@
+import './sentry.js';
 import './style.css';
 import { signup, login, saveSession, getToken, resendVerification, googleAuth } from './api.js';
 import { isNightTime } from './nightGate.js';
