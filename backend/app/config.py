@@ -7,9 +7,6 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 1440
     allowed_email_domains: str = ".edu"
     cors_origins: str = "http://localhost:3000"
-    resend_api_key: str = ""
-    email_from: str = "nightcord <onboarding@resend.dev>"
-    frontend_url: str = "http://localhost:5173"
     google_client_id: str = ""
     sentry_dsn: str = ""
     environment: str = "development"
@@ -27,6 +24,11 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+        # Removing a setting shouldn't be a hard crash just because the
+        # platform (Railway) or a local .env still has the now-unused env
+        # var set -- ignore anything the app doesn't declare rather than
+        # forbidding it.
+        extra = "ignore"
 
 
 settings = Settings()

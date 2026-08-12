@@ -1,15 +1,10 @@
-from datetime import datetime, timezone
-
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import (
     DUMMY_PASSWORD_HASH,
-    RESEND_COOLDOWN_SECONDS,
-    VERIFICATION_CODE_MAX_ATTEMPTS,
     clear_auth_cookie,
     create_access_token,
-    generate_verification_code,
     get_current_user,
     hash_password,
     is_account_locked,
@@ -24,26 +19,17 @@ from app.auth import (
     verify_password,
 )
 from app.database import get_db
-from app.email import send_verification_email
 from app.gate import resolve_signup_timezone
-from app.models import User, as_utc
+from app.models import User
 from app.rate_limit import limiter
-from app.schemas import (
-    GoogleAuthRequest,
-    LoginRequest,
-    MessageResponse,
-    ResendVerificationRequest,
-    UserCreate,
-    UserOut,
-    VerifyEmailRequest,
-)
+from app.schemas import GoogleAuthRequest, LoginRequest, MessageResponse, UserCreate, UserOut
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/hour")
-def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db)) -> User:
+def signup(request: Request, response: Response, payload: UserCreate, db: Session = Depends(get_db)) -> User:
     if not is_allowed_student_email(payload.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,22 +45,18 @@ def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db))
             detail="That password has appeared in a known data breach. Please choose a different one.",
         )
 
-    code, expires_at = generate_verification_code()
     user = User(
         email=payload.email,
         hashed_password=hash_password(payload.password),
         display_name=payload.display_name,
         timezone=resolve_signup_timezone(payload.email, payload.timezone),
-        is_verified=False,
-        verification_code=code,
-        verification_code_expires_at=expires_at,
-        last_verification_email_sent_at=datetime.now(timezone.utc),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    send_verification_email(user.email, code)
+    token = create_access_token(subject=user.email, token_version=user.token_version)
+    set_auth_cookie(response, token)
     return user
 
 
@@ -104,49 +86,6 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
         )
 
     record_successful_login(user)
-    db.commit()
-
-    if not user.is_verified:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before logging in — check your inbox for the code.",
-        )
-
-    token = create_access_token(subject=user.email, token_version=user.token_version)
-    set_auth_cookie(response, token)
-    return user
-
-
-@router.post("/verify-email", response_model=UserOut)
-@limiter.limit("20/hour")
-def verify_email(request: Request, response: Response, payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> User:
-    generic_error = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code.")
-
-    user = db.query(User).filter(User.email == payload.email).first()
-    if not user or not user.verification_code:
-        raise generic_error
-
-    if payload.code != user.verification_code:
-        user.verification_code_attempts += 1
-        if user.verification_code_attempts >= VERIFICATION_CODE_MAX_ATTEMPTS:
-            # Too many wrong guesses -- invalidate the code outright rather
-            # than let someone keep guessing against it indefinitely. A
-            # fresh code via /auth/resend-verification is required.
-            user.verification_code = None
-            user.verification_code_expires_at = None
-        db.commit()
-        raise generic_error
-
-    if not user.verification_code_expires_at or as_utc(user.verification_code_expires_at) < datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This code has expired. Request a new one.",
-        )
-
-    user.is_verified = True
-    user.verification_code = None
-    user.verification_code_expires_at = None
-    user.verification_code_attempts = 0
     db.commit()
 
     token = create_access_token(subject=user.email, token_version=user.token_version)
@@ -181,7 +120,6 @@ def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = De
 
     if user:
         user.google_id = google_id
-        user.is_verified = True
         if user.timezone is None:
             user.timezone = resolve_signup_timezone(email, payload.timezone)
     else:
@@ -190,7 +128,6 @@ def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = De
             hashed_password=None,
             google_id=google_id,
             display_name=claims.get("name") or email.split("@")[0],
-            is_verified=True,
             timezone=resolve_signup_timezone(email, payload.timezone),
         )
         db.add(user)
@@ -222,29 +159,3 @@ def logout_all(response: Response, db: Session = Depends(get_db), user: User = D
     db.commit()
     clear_auth_cookie(response)
     return MessageResponse(message="Logged out of all devices.")
-
-
-@router.post("/resend-verification", response_model=MessageResponse)
-@limiter.limit("3/hour")
-def resend_verification(request: Request, payload: ResendVerificationRequest, db: Session = Depends(get_db)) -> MessageResponse:
-    user = db.query(User).filter(User.email == payload.email).first()
-
-    if user and not user.is_verified:
-        if user.last_verification_email_sent_at:
-            elapsed = (datetime.now(timezone.utc) - as_utc(user.last_verification_email_sent_at)).total_seconds()
-            if elapsed < RESEND_COOLDOWN_SECONDS:
-                raise HTTPException(
-                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="Please wait a moment before requesting another code.",
-                )
-
-        code, expires_at = generate_verification_code()
-        user.verification_code = code
-        user.verification_code_expires_at = expires_at
-        user.verification_code_attempts = 0
-        user.last_verification_email_sent_at = datetime.now(timezone.utc)
-        db.commit()
-        send_verification_email(user.email, code)
-
-    # Same response whether or not the account exists, so we don't leak which emails are registered.
-    return MessageResponse(message="If that account needs verifying, a new code has been sent.")

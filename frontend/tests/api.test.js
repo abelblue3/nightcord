@@ -70,11 +70,11 @@ describe('requireAuth', () => {
 
 describe('request wrapper (via signup/login)', () => {
   it('signup posts the right shape and returns the parsed body', async () => {
-    mockFetchOnce(201, { id: 1, email: 'a@university.edu', is_verified: false });
+    mockFetchOnce(201, { id: 1, email: 'a@university.edu' });
 
     const result = await signup({ email: 'a@university.edu', password: 'password123', displayName: 'A' });
 
-    expect(result).toEqual({ id: 1, email: 'a@university.edu', is_verified: false });
+    expect(result).toEqual({ id: 1, email: 'a@university.edu' });
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/auth/signup');
     expect(JSON.parse(options.body)).toEqual({
@@ -129,7 +129,7 @@ describe('request wrapper (via signup/login)', () => {
   });
 
   it('signup includes the browser timezone when given one', async () => {
-    mockFetchOnce(201, { id: 1, email: 'a@university.edu', is_verified: false });
+    mockFetchOnce(201, { id: 1, email: 'a@university.edu' });
 
     await signup({ email: 'a@university.edu', password: 'password123', displayName: 'A', timezone: 'America/Denver' });
 

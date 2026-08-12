@@ -6,7 +6,6 @@ import pytest
 import dns.resolver
 
 from app.auth import (
-    generate_verification_code,
     has_valid_mx_record,
     hash_password,
     is_allowed_student_email,
@@ -168,16 +167,10 @@ def test_verify_password_handles_none_hash():
     assert verify_password("anything", None) is False
 
 
-def test_generate_verification_code_shape():
-    code, expires_at = generate_verification_code()
-    assert isinstance(code, str) and len(code) == 6 and code.isdigit()
-    assert expires_at > datetime.now(timezone.utc)
-
-
 # --- signup ---
 
 
-def test_signup_success(client, sent_emails):
+def test_signup_success(client):
     res = client.post(
         "/auth/signup",
         json={"email": "new.student@university.edu", "password": "password123", "display_name": "New Student"},
@@ -185,9 +178,9 @@ def test_signup_success(client, sent_emails):
     assert res.status_code == 201
     body = res.json()
     assert body["email"] == "new.student@university.edu"
-    assert body["is_verified"] is False
-    assert len(sent_emails) == 1
-    assert sent_emails[0]["to"] == "new.student@university.edu"
+    # Signup authenticates immediately -- there's no separate verification
+    # step to complete before the account is usable.
+    assert "access_token" in res.cookies
 
 
 def test_signup_rejects_non_edu_email(client):
@@ -230,18 +223,8 @@ def test_signup_allows_clean_password(client, monkeypatch):
 # --- login ---
 
 
-def test_login_before_verification_is_rejected(client):
-    client.post(
-        "/auth/signup",
-        json={"email": "unverified@university.edu", "password": "password123", "display_name": "Unverified"},
-    )
-    res = client.post("/auth/login", json={"email": "unverified@university.edu", "password": "password123"})
-    assert res.status_code == 403
-    assert "verify your email" in res.json()["detail"].lower()
-
-
-def test_login_wrong_password(client, db_session):
-    _signup_and_verify(client, db_session, "loginwrong@university.edu")
+def test_login_wrong_password(client):
+    _signup(client, "loginwrong@university.edu")
     res = client.post("/auth/login", json={"email": "loginwrong@university.edu", "password": "not-the-password"})
     assert res.status_code == 401
 
@@ -251,107 +234,11 @@ def test_login_nonexistent_user(client):
     assert res.status_code == 401
 
 
-def test_login_success_after_verification(client, db_session):
-    _signup_and_verify(client, db_session, "verified@university.edu")
-    res = client.post("/auth/login", json={"email": "verified@university.edu", "password": "password123"})
+def test_login_success(client):
+    _signup(client, "loginok@university.edu")
+    res = client.post("/auth/login", json={"email": "loginok@university.edu", "password": "password123"})
     assert res.status_code == 200
     assert "access_token" in res.cookies
-    assert res.json()["is_verified"] is True
-
-
-# --- verify-email ---
-
-
-def test_verify_email_invalid_code(client):
-    res = client.post("/auth/verify-email", json={"email": "nobody@university.edu", "code": "000000"})
-    assert res.status_code == 400
-
-
-def test_verify_email_wrong_code_for_real_account(client, db_session):
-    client.post(
-        "/auth/signup",
-        json={"email": "wrongcode@university.edu", "password": "password123", "display_name": "Wrong Code"},
-    )
-    res = client.post("/auth/verify-email", json={"email": "wrongcode@university.edu", "code": "000000"})
-    assert res.status_code == 400
-    assert res.json()["detail"] == "Invalid or expired code."
-
-
-def test_verify_email_code_cannot_be_reused(client, db_session):
-    code = _signup_and_get_code(client, db_session, "reuse@university.edu")
-    first = client.post("/auth/verify-email", json={"email": "reuse@university.edu", "code": code})
-    assert first.status_code == 200
-    second = client.post("/auth/verify-email", json={"email": "reuse@university.edu", "code": code})
-    assert second.status_code == 400
-
-
-def test_verify_email_expired_code(client, db_session):
-    code = _signup_and_get_code(client, db_session, "expired@university.edu")
-    user = db_session.query(User).filter(User.email == "expired@university.edu").first()
-    user.verification_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
-    db_session.commit()
-
-    res = client.post("/auth/verify-email", json={"email": "expired@university.edu", "code": code})
-    assert res.status_code == 400
-    assert "expired" in res.json()["detail"].lower()
-
-
-def test_verify_email_locks_out_after_max_attempts(client, db_session):
-    client.post(
-        "/auth/signup",
-        json={"email": "codeattempts@university.edu", "password": "password123", "display_name": "Attempts"},
-    )
-    user = db_session.query(User).filter(User.email == "codeattempts@university.edu").first()
-    real_code = user.verification_code
-
-    for _ in range(5):
-        res = client.post("/auth/verify-email", json={"email": "codeattempts@university.edu", "code": "000000"})
-        assert res.status_code == 400
-
-    # Even the real code is rejected now -- it was invalidated after the cap.
-    res = client.post("/auth/verify-email", json={"email": "codeattempts@university.edu", "code": real_code})
-    assert res.status_code == 400
-
-    db_session.refresh(user)
-    assert user.verification_code is None
-
-
-# --- resend-verification ---
-
-
-def test_resend_verification_sends_new_code_for_unverified_user(client, db_session, sent_emails):
-    original_code = _signup_and_get_code(client, db_session, "resend@university.edu")
-    sent_emails.clear()
-
-    user = db_session.query(User).filter(User.email == "resend@university.edu").first()
-    user.last_verification_email_sent_at = datetime.now(timezone.utc) - timedelta(seconds=20)
-    db_session.commit()
-
-    res = client.post("/auth/resend-verification", json={"email": "resend@university.edu"})
-    assert res.status_code == 200
-    assert len(sent_emails) == 1
-    assert sent_emails[0]["code"] != original_code
-
-
-def test_resend_verification_rejects_within_cooldown(client, db_session):
-    _signup_and_get_code(client, db_session, "cooldown@university.edu")
-
-    res = client.post("/auth/resend-verification", json={"email": "cooldown@university.edu"})
-    assert res.status_code == 429
-
-
-def test_resend_verification_same_generic_message_for_unknown_email(client):
-    res = client.post("/auth/resend-verification", json={"email": "ghost@university.edu"})
-    assert res.status_code == 200
-    assert "verifying" in res.json()["message"].lower()
-
-
-def test_resend_verification_noop_for_already_verified_user(client, db_session, sent_emails):
-    _signup_and_verify(client, db_session, "already@university.edu")
-    sent_emails.clear()
-
-    client.post("/auth/resend-verification", json={"email": "already@university.edu"})
-    assert len(sent_emails) == 0
 
 
 # --- google auth ---
@@ -361,15 +248,13 @@ def _fake_google_claims(email="student@university.edu", email_verified=True, sub
     return {"email": email, "email_verified": email_verified, "sub": sub, "name": name}
 
 
-def test_google_auth_creates_new_verified_user(client, monkeypatch):
+def test_google_auth_creates_new_user(client, monkeypatch):
     monkeypatch.setattr("app.routers.auth.verify_google_id_token", lambda credential: _fake_google_claims())
 
     res = client.post("/auth/google", json={"credential": "fake-credential"})
     assert res.status_code == 200
     assert "access_token" in res.cookies
-    body = res.json()
-    assert body["email"] == "student@university.edu"
-    assert body["is_verified"] is True
+    assert res.json()["email"] == "student@university.edu"
 
 
 def test_google_auth_rejects_unverified_google_email(client, monkeypatch):
@@ -391,7 +276,7 @@ def test_google_auth_rejects_non_edu_email(client, monkeypatch):
 
 
 def test_google_auth_links_existing_password_account(client, db_session, monkeypatch):
-    _signup_and_verify(client, db_session, "linkme@university.edu")
+    _signup(client, "linkme@university.edu")
 
     monkeypatch.setattr(
         "app.routers.auth.verify_google_id_token",
@@ -419,7 +304,7 @@ def test_password_login_rejected_for_google_only_account(client, monkeypatch):
 
 
 def test_lockout_after_max_failed_attempts(client, db_session):
-    _signup_and_verify(client, db_session, "lockout@university.edu")
+    _signup(client, "lockout@university.edu")
 
     for _ in range(settings.login_max_failed_attempts):
         res = client.post("/auth/login", json={"email": "lockout@university.edu", "password": "wrong"})
@@ -435,7 +320,7 @@ def test_lockout_after_max_failed_attempts(client, db_session):
 
 
 def test_lockout_clears_after_window_expires(client, db_session):
-    _signup_and_verify(client, db_session, "lockout2@university.edu")
+    _signup(client, "lockout2@university.edu")
     for _ in range(settings.login_max_failed_attempts):
         client.post("/auth/login", json={"email": "lockout2@university.edu", "password": "wrong"})
 
@@ -449,7 +334,7 @@ def test_lockout_clears_after_window_expires(client, db_session):
 
 
 def test_successful_login_resets_failed_attempt_counter(client, db_session):
-    _signup_and_verify(client, db_session, "resetcount@university.edu")
+    _signup(client, "resetcount@university.edu")
     client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
     client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
 
@@ -464,7 +349,7 @@ def test_successful_login_resets_failed_attempt_counter(client, db_session):
 # --- login: timing-safe against enumeration ---
 
 
-def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, db_session, monkeypatch):
+def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, monkeypatch):
     """Every branch that doesn't have a real password to check (no such user,
     a Google-only account, a locked account) must still call into
     pwd_context.verify -- otherwise response timing would reveal which case
@@ -482,7 +367,7 @@ def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, db_sessio
     client.post("/auth/login", json={"email": "nobody-at-all@university.edu", "password": "x"})
     assert len(calls) == 1
 
-    _signup_and_verify(client, db_session, "realwrong@university.edu")
+    _signup(client, "realwrong@university.edu")
     client.post("/auth/login", json={"email": "realwrong@university.edu", "password": "wrong"})
     assert len(calls) == 2
 
@@ -490,9 +375,8 @@ def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, db_sessio
 # --- session cookie: logout and revocation ---
 
 
-def test_logout_clears_the_cookie(client, db_session):
-    _signup_and_verify(client, db_session, "logoutme@university.edu")
-    client.post("/auth/login", json={"email": "logoutme@university.edu", "password": "password123"})
+def test_logout_clears_the_cookie(client):
+    _signup(client, "logoutme@university.edu")
     assert "access_token" in client.cookies
 
     res = client.post("/auth/logout")
@@ -500,9 +384,8 @@ def test_logout_clears_the_cookie(client, db_session):
     assert "access_token" not in client.cookies
 
 
-def test_logout_all_invalidates_the_token_everywhere(client, db_session):
-    _signup_and_verify(client, db_session, "revokeme@university.edu")
-    client.post("/auth/login", json={"email": "revokeme@university.edu", "password": "password123"})
+def test_logout_all_invalidates_the_token_everywhere(client):
+    _signup(client, "revokeme@university.edu")
     old_token = client.cookies["access_token"]
 
     res = client.post("/auth/logout-all")
@@ -515,9 +398,8 @@ def test_logout_all_invalidates_the_token_everywhere(client, db_session):
     assert res.status_code == 401
 
 
-def test_logout_all_requires_csrf_header(client, db_session):
-    _signup_and_verify(client, db_session, "csrfcheck@university.edu")
-    client.post("/auth/login", json={"email": "csrfcheck@university.edu", "password": "password123"})
+def test_logout_all_requires_csrf_header(client):
+    _signup(client, "csrfcheck@university.edu")
 
     res = client.post("/auth/logout-all", headers={"X-Requested-With": "not-nightcord"})
     assert res.status_code == 403
@@ -526,16 +408,9 @@ def test_logout_all_requires_csrf_header(client, db_session):
 # --- helpers ---
 
 
-def _signup_and_get_code(client, db_session, email) -> str:
-    client.post(
+def _signup(client, email, password="password123") -> None:
+    res = client.post(
         "/auth/signup",
-        json={"email": email, "password": "password123", "display_name": "Test User"},
+        json={"email": email, "password": password, "display_name": "Test User"},
     )
-    user = db_session.query(User).filter(User.email == email).first()
-    return user.verification_code
-
-
-def _signup_and_verify(client, db_session, email) -> None:
-    code = _signup_and_get_code(client, db_session, email)
-    res = client.post("/auth/verify-email", json={"email": email, "code": code})
-    assert res.status_code == 200
+    assert res.status_code == 201

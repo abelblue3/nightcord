@@ -106,14 +106,6 @@ export async function getRoomMessages(roomId) {
   return request(`/rooms/${roomId}/messages`, { auth: true });
 }
 
-export async function verifyEmail(email, code) {
-  return request('/auth/verify-email', { method: 'POST', body: { email, code } });
-}
-
-export async function resendVerification(email) {
-  return request('/auth/resend-verification', { method: 'POST', body: { email } });
-}
-
 export async function googleAuth(credential, timezone) {
   return request('/auth/google', { method: 'POST', body: { credential, timezone } });
 }

@@ -4,9 +4,6 @@ import os
 # real .env file (and never touches the real database or external services).
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
-os.environ.setdefault("RESEND_API_KEY", "test-resend-key")
-os.environ.setdefault("EMAIL_FROM", "nightcord <test@example.com>")
-os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google-client-id")
 os.environ.setdefault("SENTRY_DSN", "")  # tests must never report to the real Sentry project
 os.environ.setdefault("ENVIRONMENT", "test")
@@ -64,18 +61,6 @@ def client(db_session):
     with TestClient(app, headers={"X-Requested-With": "nightcord"}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
-
-
-@pytest.fixture(autouse=True)
-def sent_emails(monkeypatch):
-    """Captures verification emails instead of hitting the real Resend API."""
-    captured = []
-
-    def fake_send(to_email, code):
-        captured.append({"to": to_email, "code": code})
-
-    monkeypatch.setattr("app.routers.auth.send_verification_email", fake_send)
-    return captured
 
 
 @pytest.fixture(autouse=True)

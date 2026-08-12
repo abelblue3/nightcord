@@ -24,10 +24,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
-VERIFICATION_CODE_EXPIRE_MINUTES = 15
-VERIFICATION_CODE_MAX_ATTEMPTS = 5
-RESEND_COOLDOWN_SECONDS = 15
-
 # A hash of a password nobody has. Verifying against this on every login
 # failure path that doesn't have a real hash to check (no such user, a
 # Google-only account, or a locked-out account) burns the same bcrypt cost as
@@ -91,12 +87,6 @@ def set_auth_cookie(response: Response, token: str) -> None:
 
 def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key=ACCESS_TOKEN_COOKIE_NAME, **_cookie_flags())
-
-
-def generate_verification_code() -> tuple[str, datetime]:
-    code = f"{secrets.randbelow(1_000_000):06d}"
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
-    return code, expires_at
 
 
 def verify_google_id_token(credential: str) -> dict:

@@ -3,7 +3,6 @@ import './style.css';
 import { signup, login, saveSession, getUser, googleAuth } from './api.js';
 import { getBrowserTimezone } from './nightGate.js';
 import { renderGoogleButton } from './googleAuth.js';
-import { PENDING_VERIFICATION_KEY } from './verifyState.js';
 
 // Login/signup are never time-gated -- only room access is. See the
 // handoff doc's Decisions for why (in short: gating the account itself
@@ -90,9 +89,8 @@ function init() {
     const password = document.getElementById('signup-password').value;
 
     try {
-      await signup({ email, password, displayName, timezone: getBrowserTimezone() });
-      sessionStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify({ email, sentAt: Date.now() }));
-      window.location.href = '/verify.html';
+      const user = await signup({ email, password, displayName, timezone: getBrowserTimezone() });
+      await afterAuth(user);
     } catch (err) {
       showError(err.message);
       submitBtn.disabled = false;

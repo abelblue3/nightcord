@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -24,11 +24,6 @@ class User(Base):
     google_id: Mapped[str] = mapped_column(String(64), nullable=True, unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=True)
-    is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
-    verification_code: Mapped[str | None] = mapped_column(String(6), nullable=True, index=True)
-    verification_code_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    verification_code_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_verification_email_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     lockout_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

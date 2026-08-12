@@ -1,17 +1,12 @@
 import pytest
 
-from app.models import User
-
 
 @pytest.fixture()
-def logged_in_room_user(client, db_session):
+def logged_in_room_user(client):
     client.post(
         "/auth/signup",
         json={"email": "roomuser@university.edu", "password": "password123", "display_name": "Room User"},
     )
-    user = db_session.query(User).filter(User.email == "roomuser@university.edu").first()
-    client.post("/auth/verify-email", json={"email": user.email, "code": user.verification_code})
-    client.post("/auth/login", json={"email": "roomuser@university.edu", "password": "password123"})
 
 
 def test_rooms_require_auth(client):

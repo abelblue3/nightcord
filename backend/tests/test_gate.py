@@ -142,14 +142,11 @@ def test_google_auth_stores_institution_timezone(client, db_session, monkeypatch
 
 
 @pytest.fixture()
-def logged_in_gate_user(client, db_session):
+def logged_in_gate_user(client):
     client.post(
         "/auth/signup",
         json={"email": "gateuser@university.edu", "password": "password123", "display_name": "Gate User"},
     )
-    user = db_session.query(User).filter(User.email == "gateuser@university.edu").first()
-    client.post("/auth/verify-email", json={"email": user.email, "code": user.verification_code})
-    client.post("/auth/login", json={"email": "gateuser@university.edu", "password": "password123"})
 
 
 def test_rooms_accessible_when_night(client, logged_in_gate_user):

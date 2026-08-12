@@ -1,18 +1,13 @@
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
-from app.models import User
-
 
 @pytest.fixture()
-def logged_in_user(client, db_session):
+def logged_in_user(client):
     client.post(
         "/auth/signup",
         json={"email": "chatuser@university.edu", "password": "password123", "display_name": "Chat User"},
     )
-    user = db_session.query(User).filter(User.email == "chatuser@university.edu").first()
-    client.post("/auth/verify-email", json={"email": user.email, "code": user.verification_code})
-    client.post("/auth/login", json={"email": "chatuser@university.edu", "password": "password123"})
 
     # The client's cookie jar now carries the session -- no token/headers to
     # thread through manually.
@@ -69,14 +64,11 @@ def test_websocket_message_is_persisted(client, logged_in_user):
     assert any(m["content"] == "persisted message" for m in history)
 
 
-def test_websocket_rejects_after_token_revocation(client, db_session):
+def test_websocket_rejects_after_token_revocation(client):
     client.post(
         "/auth/signup",
         json={"email": "revokews@university.edu", "password": "password123", "display_name": "Revoke Me"},
     )
-    user = db_session.query(User).filter(User.email == "revokews@university.edu").first()
-    client.post("/auth/verify-email", json={"email": user.email, "code": user.verification_code})
-    client.post("/auth/login", json={"email": "revokews@university.edu", "password": "password123"})
     old_cookie = client.cookies["access_token"]
     room = client.post("/rooms", json={"name": "revoke-ws-room"}).json()
 

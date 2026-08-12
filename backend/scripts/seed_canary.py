@@ -36,7 +36,6 @@ else:
         email=CANARY_EMAIL,
         hashed_password=hash_password(CANARY_PASSWORD),
         display_name="Canary",
-        is_verified=True,
     )
     db.add(user)
     db.commit()
