@@ -27,6 +27,16 @@ jobs:
       - name: Run tests
         run: pytest -v
 
+      - name: Audit dependencies
+        # PYSEC-2026-1325 (ecdsa): no fix version exists -- the maintainers
+        # have publicly declined to fix pure-Python timing side-channels by
+        # design, and recommend the `cryptography` package for anything
+        # sensitive. It's a transitive dependency of python-jose, but this
+        # app only ever uses HS256 (symmetric HMAC), never the vulnerable
+        # ECDSA code path, so it's ignored here rather than left unfixable
+        # and permanently blocking CI.
+        run: pip-audit -r requirements-dev.txt --ignore-vuln PYSEC-2026-1325
+
   backend-integration:
     runs-on: ubuntu-latest
     defaults:
@@ -79,6 +89,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
 
       - name: Run tests
         run: npm test

@@ -5,12 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>nightcord — room</title>
-    <script>
-      // Applied before first paint so there's no flash of the wrong theme.
-      if (localStorage.getItem('nightcord_theme') === 'dark') {
-        document.documentElement.setAttribute('data-theme', 'dark');
-      }
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div class="screen">

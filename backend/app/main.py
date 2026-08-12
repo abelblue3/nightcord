@@ -30,6 +30,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+@app.middleware("http")
+async def add_security_headers(request, call_next):
+    response = await call_next(request)
+    # This API only ever returns JSON -- nothing here should load or
+    # execute anything, so the policy can be maximally strict. The actual
+    # pages (Vercel-hosted) have their own, necessarily less strict CSP
+    # covering Google Sign-In, Sentry, etc. -- see frontend/vercel.json.
+    response.headers["Content-Security-Policy"] = "default-src 'none'"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if settings.environment == "production":
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
+    return response
+
+
 app.include_router(auth.router)
 app.include_router(rooms.router)
 app.include_router(chat.router)
