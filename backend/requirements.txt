@@ -11,3 +11,4 @@ python-dotenv==1.0.1
 alembic==1.13.3
 resend==2.5.1
 google-auth==2.35.0
+dnspython==2.6.1

@@ -58,3 +58,13 @@ def sent_emails(monkeypatch):
 
     monkeypatch.setattr("app.routers.auth.send_verification_email", fake_send)
     return captured
+
+
+@pytest.fixture(autouse=True)
+def no_real_dns(monkeypatch):
+    """Domain-validation tests in test_auth.py cover the real MX-lookup logic
+    directly. Every other test just needs *.edu addresses like
+    'university.edu' to pass without making a real DNS call, since those
+    aren't real institutions in our vendored dataset.
+    """
+    monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)

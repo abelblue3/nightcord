@@ -2,7 +2,10 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from app.auth import generate_verification_token, hash_password, is_allowed_student_email, verify_password
+import dns.resolver
+
+from app.auth import generate_verification_token, has_valid_mx_record, hash_password, is_allowed_student_email, verify_password
+from app.edu_domains import is_known_edu_institution
 from app.models import User
 
 
@@ -21,6 +24,87 @@ from app.models import User
 )
 def test_is_allowed_student_email(email, expected):
     assert is_allowed_student_email(email) is expected
+
+
+# --- real institution dataset ---
+
+
+@pytest.mark.parametrize(
+    "domain,expected",
+    [
+        ("harvard.edu", True),
+        ("stanford.edu", True),
+        ("HARVARD.EDU", True),
+        ("cs.harvard.edu", True),  # subdomain of a known institution
+        ("grad.cs.harvard.edu", True),  # multi-level subdomain
+        ("not-a-real-school.edu", False),
+        ("harvard.edu.fake.com", False),  # known domain as a suffix, not the actual domain
+    ],
+)
+def test_is_known_edu_institution(domain, expected):
+    assert is_known_edu_institution(domain) is expected
+
+
+# --- MX record check ---
+
+
+def test_has_valid_mx_record_true_when_answers_exist(monkeypatch):
+    monkeypatch.setattr("app.auth.dns.resolver.resolve", lambda domain, rtype, lifetime: ["mx1.example.com"])
+    assert has_valid_mx_record("example.edu") is True
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        dns.resolver.NXDOMAIN(),
+        dns.resolver.NoAnswer(),
+        dns.resolver.NoNameservers(),
+        dns.exception.Timeout(),
+    ],
+)
+def test_has_valid_mx_record_false_on_dns_failures(monkeypatch, exception):
+    def raise_it(domain, rtype, lifetime):
+        raise exception
+
+    monkeypatch.setattr("app.auth.dns.resolver.resolve", raise_it)
+    assert has_valid_mx_record("nonexistent.edu") is False
+
+
+def test_has_valid_mx_record_fails_closed_on_unexpected_error(monkeypatch):
+    def raise_it(domain, rtype, lifetime):
+        raise RuntimeError("something the DNS library didn't expect")
+
+    monkeypatch.setattr("app.auth.dns.resolver.resolve", raise_it)
+    assert has_valid_mx_record("example.edu") is False
+
+
+# --- combined signup domain validation ---
+
+
+def test_is_allowed_student_email_known_institution_skips_mx_lookup(monkeypatch):
+    def fail_if_called(domain):
+        raise AssertionError("should not need a DNS lookup for a known institution")
+
+    monkeypatch.setattr("app.auth.has_valid_mx_record", fail_if_called)
+    assert is_allowed_student_email("student@harvard.edu") is True
+
+
+def test_is_allowed_student_email_unknown_domain_accepted_with_valid_mx(monkeypatch):
+    monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)
+    assert is_allowed_student_email("student@some-small-college.edu") is True
+
+
+def test_is_allowed_student_email_unknown_domain_rejected_without_valid_mx(monkeypatch):
+    monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: False)
+    assert is_allowed_student_email("student@typo-domain.edu") is False
+
+
+def test_is_allowed_student_email_wrong_suffix_never_reaches_mx_check(monkeypatch):
+    def fail_if_called(domain):
+        raise AssertionError("should not check MX for a domain that already fails the suffix check")
+
+    monkeypatch.setattr("app.auth.has_valid_mx_record", fail_if_called)
+    assert is_allowed_student_email("student@gmail.com") is False
 
 
 def test_hash_and_verify_password_roundtrip():

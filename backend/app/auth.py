@@ -1,6 +1,8 @@
 import secrets
 from datetime import datetime, timedelta, timezone
 
+import dns.exception
+import dns.resolver
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from google.auth.transport import requests as google_requests
@@ -11,7 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.edu_domains import is_known_edu_institution
 from app.models import User
+
+MX_LOOKUP_TIMEOUT_SECONDS = 3.0
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
@@ -44,12 +49,39 @@ def verify_google_id_token(credential: str) -> dict:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential.")
 
 
+def has_valid_mx_record(domain: str) -> bool:
+    """Confirms the domain can currently receive mail at all. Fails closed:
+    any lookup problem (nonexistent domain, no mail servers, timeout, resolver
+    error) is treated as "not a real, reachable domain" rather than allowing
+    it through.
+    """
+    try:
+        answers = dns.resolver.resolve(domain, "MX", lifetime=MX_LOOKUP_TIMEOUT_SECONDS)
+        return len(answers) > 0
+    except (dns.resolver.NXDOMAIN, dns.resolver.NoAnswer, dns.resolver.NoNameservers, dns.exception.Timeout):
+        return False
+    except Exception:
+        return False
+
+
 def is_allowed_student_email(email: str) -> bool:
     domain = email.rsplit("@", 1)[-1].lower()
-    return any(
+
+    matches_allowed_suffix = any(
         domain == allowed.lstrip(".") or domain.endswith(allowed if allowed.startswith(".") else f".{allowed}")
         for allowed in settings.allowed_email_domain_list
     )
+    if not matches_allowed_suffix:
+        return False
+
+    # A domain we recognize as a real, accredited institution is trusted
+    # outright -- no need for a network call. Anything else still has to
+    # prove it can actually receive mail, which catches typos and
+    # nonexistent domains that happen to end in .edu.
+    if is_known_edu_institution(domain):
+        return True
+
+    return has_valid_mx_record(domain)
 
 
 def create_access_token(subject: str) -> str:

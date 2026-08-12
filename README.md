@@ -83,9 +83,24 @@ Other useful commands: `alembic current` (what revision the DB is on),
 `alembic check` (confirms models match the DB with no pending changes),
 `alembic downgrade -1` (roll back one migration).
 
+### Student email validation
+
+Beyond the `.edu` suffix check, signup validates the domain two more ways
+(`app/auth.py`, `app/edu_domains.py`):
+
+1. **Known institution check** — the domain (or a parent of it, e.g.
+   `cs.harvard.edu` → `harvard.edu`) is looked up against
+   `app/data/edu_domains.json`, ~2,400 real U.S. `.edu` domains vendored from
+   [Hipo/university-domains-list](https://github.com/Hipo/university-domains-list).
+   A match is trusted immediately — no network call.
+2. **MX record fallback** — if the domain isn't in that list (a real but
+   newer/smaller school our snapshot missed), we do a live DNS lookup to
+   confirm it can actually receive mail. Fails closed: any lookup problem
+   (nonexistent domain, no mail servers, timeout) rejects the signup.
+
 ### Endpoints
 
-- `POST /auth/signup` — create account (requires an allowed student email domain, see `ALLOWED_EMAIL_DOMAINS`); sends a verification email, account is inactive until verified
+- `POST /auth/signup` — create account (requires an allowed, real-institution student email domain); sends a verification email, account is inactive until verified
 - `POST /auth/login` — get a JWT access token (rejects unverified accounts)
 - `POST /auth/verify-email` — activate an account from its emailed verification link, returns a JWT
 - `POST /auth/resend-verification` — request a new verification link
