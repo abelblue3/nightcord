@@ -193,6 +193,21 @@ a {
   padding: 8px 10px;
 }
 
+.btn-link {
+  font-family: var(--font-body);
+  font-size: inherit;
+  color: var(--primary);
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.btn-link:hover {
+  color: var(--primary-dark);
+}
+
 /* --- tabs --- */
 
 .tabs {

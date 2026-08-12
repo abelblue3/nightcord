@@ -1,6 +1,12 @@
 import { isNightInTimezone, nextTransitionInTimezone, formatCountdown } from './nightGate.js';
+import { logout, clearSession } from './api.js';
 
 export function renderClosedScreen(container, timezone) {
+  // This replaces the whole page shell, including whatever topbar/logout
+  // button the surrounding page had -- so the closed screen needs its own,
+  // self-contained way out. Otherwise someone who signed up with the wrong
+  // account (or just wants a different one) is stuck staring at a countdown
+  // with no way to sign out.
   container.innerHTML = `
     <div class="stack">
       <h1 class="center-text">NIGHTCORD<span class="blink">_</span></h1>
@@ -10,10 +16,25 @@ export function renderClosedScreen(container, timezone) {
         <p class="center-text closed-label">opens in</p>
         <div class="countdown center-text" id="gate-countdown">00:00:00</div>
       </div>
+      <p class="center-text hint">
+        wrong account? <button type="button" class="btn-link" id="closed-logout-btn">sign out</button>
+      </p>
     </div>
   `;
 
   const countdownEl = container.querySelector('#gate-countdown');
+
+  container.querySelector('#closed-logout-btn').addEventListener('click', async () => {
+    try {
+      await logout();
+    } catch {
+      // Sign the browser out locally either way -- a failed logout request
+      // shouldn't strand someone who's trying to leave.
+    } finally {
+      clearSession();
+      window.location.href = '/index.html';
+    }
+  });
 
   function tick() {
     const ms = nextTransitionInTimezone(timezone) - Date.now();

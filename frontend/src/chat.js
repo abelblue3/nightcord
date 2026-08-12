@@ -26,6 +26,8 @@ async function init() {
   document.getElementById('logout-btn').addEventListener('click', async () => {
     try {
       await logout();
+    } catch {
+      // Sign out locally either way -- a failed request shouldn't strand someone.
     } finally {
       clearSession();
       window.location.href = '/index.html';
