@@ -5,9 +5,11 @@ from sqlalchemy.orm import Session
 
 from app.auth import (
     DUMMY_PASSWORD_HASH,
+    RESEND_COOLDOWN_SECONDS,
+    VERIFICATION_CODE_MAX_ATTEMPTS,
     clear_auth_cookie,
     create_access_token,
-    generate_verification_token,
+    generate_verification_code,
     get_current_user,
     hash_password,
     is_account_locked,
@@ -57,21 +59,22 @@ def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db))
             detail="That password has appeared in a known data breach. Please choose a different one.",
         )
 
-    token, expires_at = generate_verification_token()
+    code, expires_at = generate_verification_code()
     user = User(
         email=payload.email,
         hashed_password=hash_password(payload.password),
         display_name=payload.display_name,
         timezone=resolve_signup_timezone(payload.email, payload.timezone),
         is_verified=False,
-        verification_token=token,
-        verification_token_expires_at=expires_at,
+        verification_code=code,
+        verification_code_expires_at=expires_at,
+        last_verification_email_sent_at=datetime.now(timezone.utc),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
 
-    send_verification_email(user.email, token)
+    send_verification_email(user.email, code)
     return user
 
 
@@ -106,7 +109,7 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
     if not user.is_verified:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Please verify your email before logging in — check your inbox for the link.",
+            detail="Please verify your email before logging in — check your inbox for the code.",
         )
 
     token = create_access_token(subject=user.email, token_version=user.token_version)
@@ -117,20 +120,33 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
 @router.post("/verify-email", response_model=UserOut)
 @limiter.limit("20/hour")
 def verify_email(request: Request, response: Response, payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> User:
-    user = db.query(User).filter(User.verification_token == payload.token).first()
+    generic_error = HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired code.")
 
-    if not user or not user.verification_token_expires_at:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification link.")
+    user = db.query(User).filter(User.email == payload.email).first()
+    if not user or not user.verification_code:
+        raise generic_error
 
-    if as_utc(user.verification_token_expires_at) < datetime.now(timezone.utc):
+    if payload.code != user.verification_code:
+        user.verification_code_attempts += 1
+        if user.verification_code_attempts >= VERIFICATION_CODE_MAX_ATTEMPTS:
+            # Too many wrong guesses -- invalidate the code outright rather
+            # than let someone keep guessing against it indefinitely. A
+            # fresh code via /auth/resend-verification is required.
+            user.verification_code = None
+            user.verification_code_expires_at = None
+        db.commit()
+        raise generic_error
+
+    if not user.verification_code_expires_at or as_utc(user.verification_code_expires_at) < datetime.now(timezone.utc):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="This verification link has expired. Request a new one.",
+            detail="This code has expired. Request a new one.",
         )
 
     user.is_verified = True
-    user.verification_token = None
-    user.verification_token_expires_at = None
+    user.verification_code = None
+    user.verification_code_expires_at = None
+    user.verification_code_attempts = 0
     db.commit()
 
     token = create_access_token(subject=user.email, token_version=user.token_version)
@@ -214,11 +230,21 @@ def resend_verification(request: Request, payload: ResendVerificationRequest, db
     user = db.query(User).filter(User.email == payload.email).first()
 
     if user and not user.is_verified:
-        token, expires_at = generate_verification_token()
-        user.verification_token = token
-        user.verification_token_expires_at = expires_at
+        if user.last_verification_email_sent_at:
+            elapsed = (datetime.now(timezone.utc) - as_utc(user.last_verification_email_sent_at)).total_seconds()
+            if elapsed < RESEND_COOLDOWN_SECONDS:
+                raise HTTPException(
+                    status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail="Please wait a moment before requesting another code.",
+                )
+
+        code, expires_at = generate_verification_code()
+        user.verification_code = code
+        user.verification_code_expires_at = expires_at
+        user.verification_code_attempts = 0
+        user.last_verification_email_sent_at = datetime.now(timezone.utc)
         db.commit()
-        send_verification_email(user.email, token)
+        send_verification_email(user.email, code)
 
     # Same response whether or not the account exists, so we don't leak which emails are registered.
-    return MessageResponse(message="If that account needs verifying, a new link has been sent.")
+    return MessageResponse(message="If that account needs verifying, a new code has been sent.")

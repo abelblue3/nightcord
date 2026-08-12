@@ -24,7 +24,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
-VERIFICATION_TOKEN_EXPIRE_HOURS = 24
+VERIFICATION_CODE_EXPIRE_MINUTES = 15
+VERIFICATION_CODE_MAX_ATTEMPTS = 5
+RESEND_COOLDOWN_SECONDS = 15
 
 # A hash of a password nobody has. Verifying against this on every login
 # failure path that doesn't have a real hash to check (no such user, a
@@ -91,10 +93,10 @@ def clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(key=ACCESS_TOKEN_COOKIE_NAME, **_cookie_flags())
 
 
-def generate_verification_token() -> tuple[str, datetime]:
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now(timezone.utc) + timedelta(hours=VERIFICATION_TOKEN_EXPIRE_HOURS)
-    return token, expires_at
+def generate_verification_code() -> tuple[str, datetime]:
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=VERIFICATION_CODE_EXPIRE_MINUTES)
+    return code, expires_at
 
 
 def verify_google_id_token(credential: str) -> dict:

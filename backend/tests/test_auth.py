@@ -6,7 +6,7 @@ import pytest
 import dns.resolver
 
 from app.auth import (
-    generate_verification_token,
+    generate_verification_code,
     has_valid_mx_record,
     hash_password,
     is_allowed_student_email,
@@ -168,9 +168,9 @@ def test_verify_password_handles_none_hash():
     assert verify_password("anything", None) is False
 
 
-def test_generate_verification_token_shape():
-    token, expires_at = generate_verification_token()
-    assert isinstance(token, str) and len(token) > 20
+def test_generate_verification_code_shape():
+    code, expires_at = generate_verification_code()
+    assert isinstance(code, str) and len(code) == 6 and code.isdigit()
     assert expires_at > datetime.now(timezone.utc)
 
 
@@ -262,41 +262,82 @@ def test_login_success_after_verification(client, db_session):
 # --- verify-email ---
 
 
-def test_verify_email_invalid_token(client):
-    res = client.post("/auth/verify-email", json={"token": "not-a-real-token"})
+def test_verify_email_invalid_code(client):
+    res = client.post("/auth/verify-email", json={"email": "nobody@university.edu", "code": "000000"})
     assert res.status_code == 400
 
 
-def test_verify_email_token_cannot_be_reused(client, db_session):
-    token = _signup_and_get_token(client, db_session, "reuse@university.edu")
-    first = client.post("/auth/verify-email", json={"token": token})
+def test_verify_email_wrong_code_for_real_account(client, db_session):
+    client.post(
+        "/auth/signup",
+        json={"email": "wrongcode@university.edu", "password": "password123", "display_name": "Wrong Code"},
+    )
+    res = client.post("/auth/verify-email", json={"email": "wrongcode@university.edu", "code": "000000"})
+    assert res.status_code == 400
+    assert res.json()["detail"] == "Invalid or expired code."
+
+
+def test_verify_email_code_cannot_be_reused(client, db_session):
+    code = _signup_and_get_code(client, db_session, "reuse@university.edu")
+    first = client.post("/auth/verify-email", json={"email": "reuse@university.edu", "code": code})
     assert first.status_code == 200
-    second = client.post("/auth/verify-email", json={"token": token})
+    second = client.post("/auth/verify-email", json={"email": "reuse@university.edu", "code": code})
     assert second.status_code == 400
 
 
-def test_verify_email_expired_token(client, db_session):
-    token = _signup_and_get_token(client, db_session, "expired@university.edu")
+def test_verify_email_expired_code(client, db_session):
+    code = _signup_and_get_code(client, db_session, "expired@university.edu")
     user = db_session.query(User).filter(User.email == "expired@university.edu").first()
-    user.verification_token_expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+    user.verification_code_expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
     db_session.commit()
 
-    res = client.post("/auth/verify-email", json={"token": token})
+    res = client.post("/auth/verify-email", json={"email": "expired@university.edu", "code": code})
     assert res.status_code == 400
     assert "expired" in res.json()["detail"].lower()
+
+
+def test_verify_email_locks_out_after_max_attempts(client, db_session):
+    client.post(
+        "/auth/signup",
+        json={"email": "codeattempts@university.edu", "password": "password123", "display_name": "Attempts"},
+    )
+    user = db_session.query(User).filter(User.email == "codeattempts@university.edu").first()
+    real_code = user.verification_code
+
+    for _ in range(5):
+        res = client.post("/auth/verify-email", json={"email": "codeattempts@university.edu", "code": "000000"})
+        assert res.status_code == 400
+
+    # Even the real code is rejected now -- it was invalidated after the cap.
+    res = client.post("/auth/verify-email", json={"email": "codeattempts@university.edu", "code": real_code})
+    assert res.status_code == 400
+
+    db_session.refresh(user)
+    assert user.verification_code is None
 
 
 # --- resend-verification ---
 
 
-def test_resend_verification_sends_new_token_for_unverified_user(client, db_session, sent_emails):
-    original_token = _signup_and_get_token(client, db_session, "resend@university.edu")
+def test_resend_verification_sends_new_code_for_unverified_user(client, db_session, sent_emails):
+    original_code = _signup_and_get_code(client, db_session, "resend@university.edu")
     sent_emails.clear()
+
+    user = db_session.query(User).filter(User.email == "resend@university.edu").first()
+    user.last_verification_email_sent_at = datetime.now(timezone.utc) - timedelta(seconds=20)
+    db_session.commit()
 
     res = client.post("/auth/resend-verification", json={"email": "resend@university.edu"})
     assert res.status_code == 200
     assert len(sent_emails) == 1
-    assert sent_emails[0]["token"] != original_token
+    assert sent_emails[0]["code"] != original_code
+
+
+def test_resend_verification_rejects_within_cooldown(client, db_session):
+    _signup_and_get_code(client, db_session, "cooldown@university.edu")
+
+    res = client.post("/auth/resend-verification", json={"email": "cooldown@university.edu"})
+    assert res.status_code == 429
 
 
 def test_resend_verification_same_generic_message_for_unknown_email(client):
@@ -485,16 +526,16 @@ def test_logout_all_requires_csrf_header(client, db_session):
 # --- helpers ---
 
 
-def _signup_and_get_token(client, db_session, email) -> str:
+def _signup_and_get_code(client, db_session, email) -> str:
     client.post(
         "/auth/signup",
         json={"email": email, "password": "password123", "display_name": "Test User"},
     )
     user = db_session.query(User).filter(User.email == email).first()
-    return user.verification_token
+    return user.verification_code
 
 
 def _signup_and_verify(client, db_session, email) -> None:
-    token = _signup_and_get_token(client, db_session, email)
-    res = client.post("/auth/verify-email", json={"token": token})
+    code = _signup_and_get_code(client, db_session, email)
+    res = client.post("/auth/verify-email", json={"email": email, "code": code})
     assert res.status_code == 200

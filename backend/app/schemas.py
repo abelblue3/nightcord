@@ -27,7 +27,8 @@ class LoginRequest(BaseModel):
 
 
 class VerifyEmailRequest(BaseModel):
-    token: str
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
 
 
 class ResendVerificationRequest(BaseModel):

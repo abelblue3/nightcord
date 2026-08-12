@@ -71,8 +71,8 @@ def sent_emails(monkeypatch):
     """Captures verification emails instead of hitting the real Resend API."""
     captured = []
 
-    def fake_send(to_email, token):
-        captured.append({"to": to_email, "token": token})
+    def fake_send(to_email, code):
+        captured.append({"to": to_email, "code": code})
 
     monkeypatch.setattr("app.routers.auth.send_verification_email", fake_send)
     return captured

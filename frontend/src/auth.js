@@ -1,8 +1,9 @@
 import './sentry.js';
 import './style.css';
-import { signup, login, saveSession, getUser, resendVerification, googleAuth } from './api.js';
+import { signup, login, saveSession, getUser, googleAuth } from './api.js';
 import { getBrowserTimezone } from './nightGate.js';
 import { renderGoogleButton } from './googleAuth.js';
+import { PENDING_VERIFICATION_KEY } from './verifyState.js';
 
 // Login/signup are never time-gated -- only room access is. See the
 // handoff doc's Decisions for why (in short: gating the account itself
@@ -20,11 +21,7 @@ function init() {
   const tabSignup = document.getElementById('tab-signup');
   const loginForm = document.getElementById('login-form');
   const signupForm = document.getElementById('signup-form');
-  const checkEmailPanel = document.getElementById('check-email-panel');
-  const checkEmailText = document.getElementById('check-email-text');
   const errorBox = document.getElementById('error-box');
-
-  let pendingEmail = '';
 
   function showError(message) {
     errorBox.textContent = message;
@@ -38,20 +35,11 @@ function init() {
 
   function showTab(which) {
     clearError();
-    checkEmailPanel.style.display = 'none';
     const isLogin = which === 'login';
     tabLogin.classList.toggle('active', isLogin);
     tabSignup.classList.toggle('active', !isLogin);
     loginForm.style.display = isLogin ? 'block' : 'none';
     signupForm.style.display = isLogin ? 'none' : 'block';
-  }
-
-  function showCheckEmail(email) {
-    pendingEmail = email;
-    signupForm.style.display = 'none';
-    loginForm.style.display = 'none';
-    checkEmailPanel.style.display = 'block';
-    checkEmailText.textContent = `We sent a verification link to ${email}. Click it to activate your account, then come back and log in.`;
   }
 
   tabLogin.addEventListener('click', () => showTab('login'));
@@ -103,30 +91,11 @@ function init() {
 
     try {
       await signup({ email, password, displayName, timezone: getBrowserTimezone() });
-      showCheckEmail(email);
+      sessionStorage.setItem(PENDING_VERIFICATION_KEY, JSON.stringify({ email, sentAt: Date.now() }));
+      window.location.href = '/verify.html';
     } catch (err) {
       showError(err.message);
-    } finally {
       submitBtn.disabled = false;
     }
   });
-
-  document.getElementById('resend-btn').addEventListener('click', async () => {
-    const btn = document.getElementById('resend-btn');
-    btn.disabled = true;
-    btn.textContent = 'Sending…';
-    try {
-      await resendVerification(pendingEmail);
-      btn.textContent = 'Sent!';
-    } catch {
-      btn.textContent = 'Resend link';
-    } finally {
-      setTimeout(() => {
-        btn.disabled = false;
-        btn.textContent = 'Resend link';
-      }, 3000);
-    }
-  });
-
-  document.getElementById('back-to-login-btn').addEventListener('click', () => showTab('login'));
 }

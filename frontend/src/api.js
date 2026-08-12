@@ -106,8 +106,8 @@ export async function getRoomMessages(roomId) {
   return request(`/rooms/${roomId}/messages`, { auth: true });
 }
 
-export async function verifyEmail(token) {
-  return request('/auth/verify-email', { method: 'POST', body: { token } });
+export async function verifyEmail(email, code) {
+  return request('/auth/verify-email', { method: 'POST', body: { email, code } });
 }
 
 export async function resendVerification(email) {

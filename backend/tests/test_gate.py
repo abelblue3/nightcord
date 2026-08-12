@@ -148,7 +148,7 @@ def logged_in_gate_user(client, db_session):
         json={"email": "gateuser@university.edu", "password": "password123", "display_name": "Gate User"},
     )
     user = db_session.query(User).filter(User.email == "gateuser@university.edu").first()
-    client.post("/auth/verify-email", json={"token": user.verification_token})
+    client.post("/auth/verify-email", json={"email": user.email, "code": user.verification_code})
     client.post("/auth/login", json={"email": "gateuser@university.edu", "password": "password123"})
 
 
