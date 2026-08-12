@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, WebSocke
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
+from app import gate
 from app.config import settings
 from app.connection_manager import manager
 from app.database import get_db
@@ -24,12 +25,24 @@ def get_user_from_token(token: str, db: Session) -> User:
 
 
 @router.websocket("/ws/rooms/{room_id}")
-async def room_chat(websocket: WebSocket, room_id: int, token: str, db: Session = Depends(get_db)):
+async def room_chat(
+    websocket: WebSocket,
+    room_id: int,
+    token: str,
+    skip_gate: str | None = None,
+    canary_token: str | None = None,
+    db: Session = Depends(get_db),
+):
     user = get_user_from_token(token, db)
 
     room = db.get(Room, room_id)
     if not room:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
+
+    if not (gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
+        user_tz = user.timezone or gate.FALLBACK_TIMEZONE
+        if not gate.is_night_in_timezone(user_tz):
+            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=f"gate-closed:{user_tz}")
 
     await manager.connect(room_id, websocket)
     try:

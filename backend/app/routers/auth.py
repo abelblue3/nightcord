@@ -13,6 +13,7 @@ from app.auth import (
 )
 from app.database import get_db
 from app.email import send_verification_email
+from app.gate import resolve_signup_timezone
 from app.models import User, as_utc
 from app.schemas import (
     GoogleAuthRequest,
@@ -44,7 +45,7 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> User:
         email=payload.email,
         hashed_password=hash_password(payload.password),
         display_name=payload.display_name,
-        timezone=payload.timezone,
+        timezone=resolve_signup_timezone(payload.email, payload.timezone),
         is_verified=False,
         verification_token=token,
         verification_token_expires_at=expires_at,
@@ -133,6 +134,8 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> To
     if user:
         user.google_id = google_id
         user.is_verified = True
+        if user.timezone is None:
+            user.timezone = resolve_signup_timezone(email, payload.timezone)
     else:
         user = User(
             email=email,
@@ -140,6 +143,7 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> To
             google_id=google_id,
             display_name=claims.get("name") or email.split("@")[0],
             is_verified=True,
+            timezone=resolve_signup_timezone(email, payload.timezone),
         )
         db.add(user)
 

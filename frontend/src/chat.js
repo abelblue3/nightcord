@@ -1,20 +1,15 @@
 import './sentry.js';
 import './style.css';
 import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket } from './api.js';
-import { isNightTime } from './nightGate.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
-if (!requireAuth()) {
-  // requireAuth already redirected to /index.html
-} else if (!isNightTime()) {
-  renderClosedScreen(document.querySelector('.screen'));
-} else {
+if (requireAuth()) {
   init();
 }
+// else: requireAuth already redirected to /index.html
 
 async function init() {
-  watchForClose();
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const params = new URLSearchParams(window.location.search);
@@ -77,12 +72,20 @@ async function init() {
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
+  // Message history is gated the same way room listing is -- this doubles
+  // as the "is the gate actually open" check before we even try the socket.
   async function loadHistory() {
     try {
       const messages = await getRoomMessages(roomId);
       for (const msg of messages) appendMessage(msg);
+      return true;
     } catch (err) {
+      if (err.status === 403 && err.data?.timezone) {
+        renderClosedScreen(document.querySelector('.screen'), err.data.timezone);
+        return false;
+      }
       showError(err.message);
+      return false;
     }
   }
 
@@ -98,7 +101,14 @@ async function init() {
       appendMessage(data);
     });
 
-    socket.addEventListener('close', () => setStatus('disconnected', 'disconnected'));
+    socket.addEventListener('close', (event) => {
+      const gateClosedMatch = /^gate-closed:(.+)$/.exec(event.reason || '');
+      if (gateClosedMatch) {
+        renderClosedScreen(document.querySelector('.screen'), gateClosedMatch[1]);
+        return;
+      }
+      setStatus('disconnected', 'disconnected');
+    });
 
     socket.addEventListener('error', () => setStatus('connection error', 'disconnected'));
   }
@@ -115,6 +125,11 @@ async function init() {
     chatInput.value = '';
   });
 
-  await loadHistory();
-  connect();
+  const gateOpen = await loadHistory();
+  if (gateOpen) {
+    connect();
+    if (currentUser?.timezone) {
+      watchForClose(currentUser.timezone);
+    }
+  }
 }

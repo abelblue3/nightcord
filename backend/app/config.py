@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     sentry_dsn: str = ""
     environment: str = "development"
+    canary_bypass_token: str = ""
 
     @property
     def allowed_email_domain_list(self) -> list[str]:

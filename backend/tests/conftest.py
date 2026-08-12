@@ -8,6 +8,9 @@ os.environ.setdefault("RESEND_API_KEY", "test-resend-key")
 os.environ.setdefault("EMAIL_FROM", "nightcord <test@example.com>")
 os.environ.setdefault("FRONTEND_URL", "http://localhost:5173")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google-client-id")
+os.environ.setdefault("SENTRY_DSN", "")  # tests must never report to the real Sentry project
+os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("CANARY_BYPASS_TOKEN", "")
 
 import pytest
 from fastapi.testclient import TestClient
@@ -80,3 +83,13 @@ def no_real_dns(monkeypatch):
     aren't real institutions in our vendored dataset.
     """
     monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)
+
+
+@pytest.fixture(autouse=True)
+def always_night(monkeypatch):
+    """Night-gate tests in test_gate.py cover the real is_night_in_timezone
+    logic directly. Every other test just needs room/chat access to work
+    regardless of the real time when the suite happens to run -- otherwise
+    tests using a fallback UTC timezone would flake depending on the hour.
+    """
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz_name, now=None: True)

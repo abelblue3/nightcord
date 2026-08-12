@@ -42,6 +42,7 @@ class ResendVerificationRequest(BaseModel):
 
 class GoogleAuthRequest(BaseModel):
     credential: str
+    timezone: str | None = None
 
 
 class MessageResponse(BaseModel):

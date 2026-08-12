@@ -1,19 +1,16 @@
 import './sentry.js';
 import './style.css';
 import { signup, login, saveSession, getToken, resendVerification, googleAuth } from './api.js';
-import { isNightTime } from './nightGate.js';
-import { renderClosedScreen, watchForClose } from './closedScreen.js';
+import { getBrowserTimezone } from './nightGate.js';
 import { renderGoogleButton } from './googleAuth.js';
 
-if (!isNightTime()) {
-  renderClosedScreen(document.querySelector('.screen'));
-} else {
-  init();
-}
+// Login/signup are never time-gated -- only room access is. See the
+// handoff doc's Decisions for why (in short: gating the account itself
+// serves no purpose, and school-timezone lookup only has an email to work
+// with once someone's actually signing up).
+init();
 
 function init() {
-  watchForClose();
-
   if (getToken()) {
     window.location.href = '/rooms.html';
     return;
@@ -68,7 +65,7 @@ function init() {
   renderGoogleButton(document.getElementById('google-signin-btn'), async (credential) => {
     clearError();
     try {
-      const { access_token, user } = await googleAuth(credential);
+      const { access_token, user } = await googleAuth(credential, getBrowserTimezone());
       await afterAuth(access_token, user);
     } catch (err) {
       showError(err.message);
@@ -105,7 +102,7 @@ function init() {
     const password = document.getElementById('signup-password').value;
 
     try {
-      await signup({ email, password, displayName });
+      await signup({ email, password, displayName, timezone: getBrowserTimezone() });
       showCheckEmail(email);
     } catch (err) {
       showError(err.message);

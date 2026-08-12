@@ -1,8 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
 from app.database import get_db
+from app.gate import require_night_access
 from app.models import Message, Room, User
 from app.schemas import MessageOut, RoomCreate, RoomOut
 
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 
 @router.get("", response_model=list[RoomOut])
-def list_rooms(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[Room]:
+def list_rooms(db: Session = Depends(get_db), _: User = Depends(require_night_access)) -> list[Room]:
     return db.query(Room).order_by(Room.created_at.desc()).all()
 
 
@@ -18,7 +18,7 @@ def list_rooms(db: Session = Depends(get_db), _: User = Depends(get_current_user
 def create_room(
     payload: RoomCreate,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_night_access),
 ) -> Room:
     if db.query(Room).filter(Room.name == payload.name).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Room name already taken.")
@@ -34,7 +34,7 @@ def create_room(
 def get_room_messages(
     room_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    _: User = Depends(require_night_access),
 ) -> list[Message]:
     room = db.get(Room, room_id)
     if not room:

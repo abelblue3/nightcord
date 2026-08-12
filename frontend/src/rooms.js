@@ -1,20 +1,15 @@
 import './sentry.js';
 import './style.css';
 import { requireAuth, getUser, clearSession, listRooms, createRoom } from './api.js';
-import { isNightTime } from './nightGate.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
-if (!requireAuth()) {
-  // requireAuth already redirected to /index.html
-} else if (!isNightTime()) {
-  renderClosedScreen(document.querySelector('.screen'));
-} else {
+if (requireAuth()) {
   init();
 }
+// else: requireAuth already redirected to /index.html
 
-function init() {
-  watchForClose();
+async function init() {
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const user = getUser();
@@ -62,8 +57,14 @@ function init() {
     try {
       const rooms = await listRooms();
       renderRooms(rooms);
+      return true;
     } catch (err) {
+      if (err.status === 403 && err.data?.timezone) {
+        renderClosedScreen(document.querySelector('.screen'), err.data.timezone);
+        return false;
+      }
       showError(err.message);
+      return true;
     }
   }
 
@@ -84,5 +85,8 @@ function init() {
     }
   });
 
-  loadRooms();
+  const gateOpen = await loadRooms();
+  if (gateOpen && user?.timezone) {
+    watchForClose(user.timezone);
+  }
 }

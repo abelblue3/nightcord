@@ -1,3 +1,5 @@
+import { devSkipGateActive } from './nightGate.js';
+
 const API_URL = import.meta.env.VITE_API_URL;
 const WS_URL = import.meta.env.VITE_WS_URL;
 
@@ -33,9 +35,13 @@ export function requireAuth() {
 }
 
 class ApiError extends Error {
-  constructor(message, status) {
+  constructor(message, status, data) {
     super(message);
     this.status = status;
+    // Raw `detail` payload from the server -- a plain string for most
+    // errors, but the night gate returns { message, timezone } so the UI
+    // can show an accurate countdown. Callers can check `.data?.timezone`.
+    this.data = data;
   }
 }
 
@@ -44,6 +50,7 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
   if (auth) {
     const token = getToken();
     if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (devSkipGateActive()) headers['X-Dev-Skip-Gate'] = '1';
   }
 
   const res = await fetch(`${API_URL}${path}`, {
@@ -55,16 +62,18 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    throw new ApiError(data.detail || 'Something went wrong.', res.status);
+    const detail = data.detail;
+    const message = typeof detail === 'string' ? detail : detail?.message || 'Something went wrong.';
+    throw new ApiError(message, res.status, detail);
   }
 
   return data;
 }
 
-export async function signup({ email, password, displayName }) {
+export async function signup({ email, password, displayName, timezone }) {
   return request('/auth/signup', {
     method: 'POST',
-    body: { email, password, display_name: displayName },
+    body: { email, password, display_name: displayName, timezone },
   });
 }
 
@@ -95,11 +104,12 @@ export async function resendVerification(email) {
   return request('/auth/resend-verification', { method: 'POST', body: { email } });
 }
 
-export async function googleAuth(credential) {
-  return request('/auth/google', { method: 'POST', body: { credential } });
+export async function googleAuth(credential, timezone) {
+  return request('/auth/google', { method: 'POST', body: { credential, timezone } });
 }
 
 export function connectRoomSocket(roomId) {
-  const token = getToken();
-  return new WebSocket(`${WS_URL}/ws/rooms/${roomId}?token=${encodeURIComponent(token)}`);
+  const params = new URLSearchParams({ token: getToken() });
+  if (devSkipGateActive()) params.set('skip_gate', '1');
+  return new WebSocket(`${WS_URL}/ws/rooms/${roomId}?${params.toString()}`);
 }
