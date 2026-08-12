@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     sentry_dsn: str = ""
     environment: str = "development"
     canary_bypass_token: str = ""
+    login_max_failed_attempts: int = 5
+    login_lockout_minutes: int = 15
 
     @property
     def allowed_email_domain_list(self) -> list[str]:

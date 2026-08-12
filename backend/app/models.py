@@ -27,6 +27,8 @@ class User(Base):
     is_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     verification_token: Mapped[str] = mapped_column(String(64), nullable=True, unique=True, index=True)
     verification_token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=True)
+    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    lockout_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="author")

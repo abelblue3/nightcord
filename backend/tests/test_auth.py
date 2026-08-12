@@ -4,7 +4,15 @@ import pytest
 
 import dns.resolver
 
-from app.auth import generate_verification_token, has_valid_mx_record, hash_password, is_allowed_student_email, verify_password
+from app.auth import (
+    generate_verification_token,
+    has_valid_mx_record,
+    hash_password,
+    is_allowed_student_email,
+    pwd_context,
+    verify_password,
+)
+from app.config import settings
 from app.edu_domains import is_known_edu_institution
 from app.models import User
 
@@ -296,8 +304,82 @@ def test_password_login_rejected_for_google_only_account(client, monkeypatch):
     client.post("/auth/google", json={"credential": "fake-credential"})
 
     res = client.post("/auth/login", json={"email": "student@university.edu", "password": "anything"})
+    # Deliberately the same generic message as any other failure -- a distinct
+    # "use Google Sign-In" message would tell an attacker this email is registered.
     assert res.status_code == 401
-    assert "google sign-in" in res.json()["detail"].lower()
+    assert res.json()["detail"] == "Incorrect email or password."
+
+
+# --- login: account lockout ---
+
+
+def test_lockout_after_max_failed_attempts(client, db_session):
+    _signup_and_verify(client, db_session, "lockout@university.edu")
+
+    for _ in range(settings.login_max_failed_attempts):
+        res = client.post("/auth/login", json={"email": "lockout@university.edu", "password": "wrong"})
+        assert res.status_code == 401
+
+    # Locked now -- even the correct password is rejected, with the same generic message.
+    res = client.post("/auth/login", json={"email": "lockout@university.edu", "password": "password123"})
+    assert res.status_code == 401
+    assert res.json()["detail"] == "Incorrect email or password."
+
+    user = db_session.query(User).filter(User.email == "lockout@university.edu").first()
+    assert user.lockout_until is not None
+
+
+def test_lockout_clears_after_window_expires(client, db_session):
+    _signup_and_verify(client, db_session, "lockout2@university.edu")
+    for _ in range(settings.login_max_failed_attempts):
+        client.post("/auth/login", json={"email": "lockout2@university.edu", "password": "wrong"})
+
+    user = db_session.query(User).filter(User.email == "lockout2@university.edu").first()
+    assert user.lockout_until is not None
+    user.lockout_until = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+
+    res = client.post("/auth/login", json={"email": "lockout2@university.edu", "password": "password123"})
+    assert res.status_code == 200
+
+
+def test_successful_login_resets_failed_attempt_counter(client, db_session):
+    _signup_and_verify(client, db_session, "resetcount@university.edu")
+    client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
+    client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
+
+    res = client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "password123"})
+    assert res.status_code == 200
+
+    user = db_session.query(User).filter(User.email == "resetcount@university.edu").first()
+    assert user.failed_login_attempts == 0
+    assert user.lockout_until is None
+
+
+# --- login: timing-safe against enumeration ---
+
+
+def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, db_session, monkeypatch):
+    """Every branch that doesn't have a real password to check (no such user,
+    a Google-only account, a locked account) must still call into
+    pwd_context.verify -- otherwise response timing would reveal which case
+    it is, even though the response body doesn't.
+    """
+    calls = []
+    original_verify = pwd_context.verify
+
+    def spy_verify(plain, hashed):
+        calls.append(hashed)
+        return original_verify(plain, hashed)
+
+    monkeypatch.setattr("app.auth.pwd_context.verify", spy_verify)
+
+    client.post("/auth/login", json={"email": "nobody-at-all@university.edu", "password": "x"})
+    assert len(calls) == 1
+
+    _signup_and_verify(client, db_session, "realwrong@university.edu")
+    client.post("/auth/login", json={"email": "realwrong@university.edu", "password": "wrong"})
+    assert len(calls) == 2
 
 
 # --- helpers ---

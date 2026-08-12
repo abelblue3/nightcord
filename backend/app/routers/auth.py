@@ -1,13 +1,17 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 from app.auth import (
+    DUMMY_PASSWORD_HASH,
     create_access_token,
     generate_verification_token,
     hash_password,
+    is_account_locked,
     is_allowed_student_email,
+    record_failed_login,
+    record_successful_login,
     verify_google_id_token,
     verify_password,
 )
@@ -15,6 +19,7 @@ from app.database import get_db
 from app.email import send_verification_email
 from app.gate import resolve_signup_timezone
 from app.models import User, as_utc
+from app.rate_limit import limiter
 from app.schemas import (
     GoogleAuthRequest,
     LoginRequest,
@@ -30,7 +35,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-def signup(payload: UserCreate, db: Session = Depends(get_db)) -> User:
+@limiter.limit("5/hour")
+def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db)) -> User:
     if not is_allowed_student_email(payload.email):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -59,20 +65,32 @@ def signup(payload: UserCreate, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=Token)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
+@limiter.limit("10/minute")
+def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.email == payload.email).first()
+    locked = user is not None and is_account_locked(user)
 
-    if user and user.hashed_password is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="This account uses Google Sign-In — use the Google button instead of a password.",
-        )
+    if user is not None and user.hashed_password is not None and not locked:
+        password_ok = verify_password(payload.password, user.hashed_password)
+    else:
+        # No real hash to check against (no such user, a Google-only account,
+        # or a locked-out account) -- verify against a dummy hash anyway so
+        # this path costs the same as a genuine wrong-password check. Without
+        # this, response timing alone would reveal which of those cases it is.
+        verify_password(payload.password, DUMMY_PASSWORD_HASH)
+        password_ok = False
 
-    if not user or not verify_password(payload.password, user.hashed_password):
+    if user is None or not password_ok:
+        if user is not None:
+            record_failed_login(user)
+            db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password.",
         )
+
+    record_successful_login(user)
+    db.commit()
 
     if not user.is_verified:
         raise HTTPException(
@@ -85,7 +103,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
 
 
 @router.post("/verify-email", response_model=Token)
-def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> Token:
+@limiter.limit("20/hour")
+def verify_email(request: Request, payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> Token:
     user = db.query(User).filter(User.verification_token == payload.token).first()
 
     if not user or not user.verification_token_expires_at:
@@ -155,7 +174,8 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> To
 
 
 @router.post("/resend-verification", response_model=MessageResponse)
-def resend_verification(payload: ResendVerificationRequest, db: Session = Depends(get_db)) -> MessageResponse:
+@limiter.limit("3/hour")
+def resend_verification(request: Request, payload: ResendVerificationRequest, db: Session = Depends(get_db)) -> MessageResponse:
     user = db.query(User).filter(User.email == payload.email).first()
 
     if user and not user.is_verified:

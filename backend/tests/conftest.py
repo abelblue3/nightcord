@@ -86,6 +86,19 @@ def no_real_dns(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def reset_rate_limits():
+    """The rate limiter's storage is shared process memory (not per-request),
+    so without resetting it, tests that repeatedly hit /auth/login or
+    /auth/signup across the suite would eventually trip the real limits.
+    """
+    from app.rate_limit import limiter
+
+    limiter.reset()
+    yield
+    limiter.reset()
+
+
+@pytest.fixture(autouse=True)
 def always_night(monkeypatch):
     """Night-gate tests in test_gate.py cover the real is_night_in_timezone
     logic directly. Every other test just needs room/chat access to work

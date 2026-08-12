@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.edu_domains import is_known_edu_institution
-from app.models import User
+from app.models import User, as_utc
 
 MX_LOOKUP_TIMEOUT_SECONDS = 3.0
 
@@ -22,6 +22,13 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 VERIFICATION_TOKEN_EXPIRE_HOURS = 24
+
+# A hash of a password nobody has. Verifying against this on every login
+# failure path that doesn't have a real hash to check (no such user, a
+# Google-only account, or a locked-out account) burns the same bcrypt cost as
+# a genuine wrong-password attempt, so response timing can't be used to tell
+# those cases apart from the outside.
+DUMMY_PASSWORD_HASH = CryptContext(schemes=["bcrypt"]).hash(secrets.token_urlsafe(32))
 
 
 def hash_password(password: str) -> str:
@@ -32,6 +39,22 @@ def verify_password(plain_password: str, hashed_password: str | None) -> bool:
     if hashed_password is None:
         return False
     return pwd_context.verify(plain_password, hashed_password)
+
+
+def is_account_locked(user: User) -> bool:
+    return user.lockout_until is not None and as_utc(user.lockout_until) > datetime.now(timezone.utc)
+
+
+def record_failed_login(user: User) -> None:
+    user.failed_login_attempts += 1
+    if user.failed_login_attempts >= settings.login_max_failed_attempts:
+        user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=settings.login_lockout_minutes)
+        user.failed_login_attempts = 0
+
+
+def record_successful_login(user: User) -> None:
+    user.failed_login_attempts = 0
+    user.lockout_until = None
 
 
 def generate_verification_token() -> tuple[str, datetime]:
