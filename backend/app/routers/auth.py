@@ -12,6 +12,7 @@ from app.auth import (
     hash_password,
     is_account_locked,
     is_allowed_student_email,
+    is_breached_password,
     record_failed_login,
     record_successful_login,
     require_csrf_header,
@@ -49,6 +50,12 @@ def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db))
 
     if db.query(User).filter(User.email == payload.email).first():
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
+
+    if is_breached_password(payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="That password has appeared in a known data breach. Please choose a different one.",
+        )
 
     token, expires_at = generate_verification_token()
     user = User(

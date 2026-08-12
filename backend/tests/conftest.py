@@ -89,6 +89,18 @@ def no_real_dns(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def no_real_breach_check(monkeypatch):
+    """Breach-check tests in test_auth.py cover is_breached_password's real
+    HTTP/hashing logic directly. Every other test just needs signup to work
+    without making a real call to the Have I Been Pwned API. Patched on the
+    importing module (routers/auth.py bare-imports the function, which
+    freezes the reference at import time -- patching app.auth.is_breached_password
+    would not affect this call site).
+    """
+    monkeypatch.setattr("app.routers.auth.is_breached_password", lambda password: False)
+
+
+@pytest.fixture(autouse=True)
 def reset_rate_limits():
     """The rate limiter's storage is shared process memory (not per-request),
     so without resetting it, tests that repeatedly hit /auth/login or

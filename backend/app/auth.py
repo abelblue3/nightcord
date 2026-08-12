@@ -1,8 +1,10 @@
+import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
 
 import dns.exception
 import dns.resolver
+import httpx
 from fastapi import Cookie, Depends, Header, HTTPException, Response, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
@@ -16,6 +18,7 @@ from app.edu_domains import is_known_edu_institution
 from app.models import User, as_utc
 
 MX_LOOKUP_TIMEOUT_SECONDS = 3.0
+PWNED_API_TIMEOUT_SECONDS = 2.0
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -116,6 +119,27 @@ def has_valid_mx_record(domain: str) -> bool:
         return False
     except Exception:
         return False
+
+
+def is_breached_password(password: str) -> bool:
+    """Checks the password against the Have I Been Pwned Pwned Passwords
+    corpus using k-anonymity: only a 5-character SHA-1 prefix is ever sent
+    over the network, shared by hundreds of unrelated hashes, so neither the
+    password nor its full hash leaves this server.
+
+    Fails open (treats the password as clean) on any network/API problem --
+    unlike has_valid_mx_record's fail-closed behavior above, an outage here
+    says nothing about whether the password itself is bad, so blocking every
+    signup over a third-party hiccup would be the wrong tradeoff.
+    """
+    sha1 = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
+    prefix, suffix = sha1[:5], sha1[5:]
+    try:
+        response = httpx.get(f"https://api.pwnedpasswords.com/range/{prefix}", timeout=PWNED_API_TIMEOUT_SECONDS)
+        response.raise_for_status()
+    except httpx.HTTPError:
+        return False
+    return any(line.partition(":")[0] == suffix for line in response.text.splitlines())
 
 
 def is_allowed_student_email(email: str) -> bool:

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
+import httpx
 import pytest
 
 import dns.resolver
@@ -9,6 +10,7 @@ from app.auth import (
     has_valid_mx_record,
     hash_password,
     is_allowed_student_email,
+    is_breached_password,
     pwd_context,
     verify_password,
 )
@@ -86,6 +88,46 @@ def test_has_valid_mx_record_fails_closed_on_unexpected_error(monkeypatch):
     assert has_valid_mx_record("example.edu") is False
 
 
+# --- breached-password (Have I Been Pwned) check ---
+
+
+def test_is_breached_password_true_when_suffix_matches(monkeypatch):
+    # SHA-1("hunter2") = F3BBBD66A63D4BF1747940578EC3D0103530E21D
+    # prefix "F3BBB", real suffix "D66A63D4BF1747940578EC3D0103530E21D"
+    def fake_get(url, timeout):
+        assert url.endswith("/range/F3BBB")
+        body = "D66A63D4BF1747940578EC3D0103530E21D:37\nAAAA111111111111111111111111111111:1"
+        return httpx.Response(200, text=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("app.auth.httpx.get", fake_get)
+    assert is_breached_password("hunter2") is True
+
+
+def test_is_breached_password_false_when_no_suffix_matches(monkeypatch):
+    def fake_get(url, timeout):
+        body = "AAAA111111111111111111111111111111:1"
+        return httpx.Response(200, text=body, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("app.auth.httpx.get", fake_get)
+    assert is_breached_password("hunter2") is False
+
+
+def test_is_breached_password_fails_open_on_network_error(monkeypatch):
+    def raise_it(url, timeout):
+        raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr("app.auth.httpx.get", raise_it)
+    assert is_breached_password("anything") is False
+
+
+def test_is_breached_password_fails_open_on_http_error_status(monkeypatch):
+    def fake_get(url, timeout):
+        return httpx.Response(500, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr("app.auth.httpx.get", fake_get)
+    assert is_breached_password("anything") is False
+
+
 # --- combined signup domain validation ---
 
 
@@ -161,6 +203,28 @@ def test_signup_rejects_duplicate_email(client):
     assert client.post("/auth/signup", json=payload).status_code == 201
     res = client.post("/auth/signup", json=payload)
     assert res.status_code == 409
+
+
+def test_signup_rejects_breached_password(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.is_breached_password", lambda password: True)
+    res = client.post(
+        "/auth/signup",
+        json={"email": "breached@university.edu", "password": "whatever-it-is", "display_name": "Breached"},
+    )
+    assert res.status_code == 400
+    assert "data breach" in res.json()["detail"].lower()
+
+
+def test_signup_allows_clean_password(client, monkeypatch):
+    # The no_real_breach_check autouse fixture already does this, but this
+    # test makes the intent explicit and independent of that fixture's
+    # continued existence.
+    monkeypatch.setattr("app.routers.auth.is_breached_password", lambda password: False)
+    res = client.post(
+        "/auth/signup",
+        json={"email": "clean@university.edu", "password": "not-in-any-breach", "display_name": "Clean"},
+    )
+    assert res.status_code == 201
 
 
 # --- login ---
