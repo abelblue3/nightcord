@@ -21,11 +21,22 @@ from app.main import app
 
 @pytest.fixture()
 def db_session():
-    engine = create_engine(
-        "sqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
+    # By default tests run against fast in-memory SQLite. Setting
+    # TEST_DATABASE_URL (as the "integration" CI job does, pointing at a real
+    # Postgres service container) runs this exact same suite against Postgres
+    # instead -- this is what already caught the SQLite/Postgres datetime
+    # mismatch once, so it's worth keeping as a real integration signal.
+    test_db_url = os.environ.get("TEST_DATABASE_URL")
+
+    if test_db_url:
+        engine = create_engine(test_db_url)
+    else:
+        engine = create_engine(
+            "sqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -35,6 +46,7 @@ def db_session():
     finally:
         session.close()
         Base.metadata.drop_all(bind=engine)
+        engine.dispose()
 
 
 @pytest.fixture()
