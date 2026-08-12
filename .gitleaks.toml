@@ -1,0 +1,10 @@
+title = "nightcord gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "IANA timezone identifiers (e.g. America/Chicago, Asia/Tokyo) misidentified as generic API keys by the entropy heuristic -- real secrets don't take this Region/City shape."
+regexes = [
+  '''^(Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific|Etc)/[A-Za-z_+-]+$''',
+]
