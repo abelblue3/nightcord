@@ -3,16 +3,14 @@ import { devSkipGateActive } from './nightGate.js';
 const API_URL = import.meta.env.VITE_API_URL;
 const WS_URL = import.meta.env.VITE_WS_URL;
 
-const TOKEN_KEY = 'nightcord_token';
 const USER_KEY = 'nightcord_user';
 
-export function saveSession(token, user) {
-  localStorage.setItem(TOKEN_KEY, token);
+// The session token itself lives in an httpOnly cookie the backend sets --
+// this JS never sees it. What's cached here is only the non-sensitive user
+// object, purely so the UI has something to render immediately; the cookie
+// (checked server-side on every request) is the actual source of truth.
+export function saveSession(user) {
   localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
-
-export function getToken() {
-  return localStorage.getItem(TOKEN_KEY);
 }
 
 export function getUser() {
@@ -21,17 +19,19 @@ export function getUser() {
 }
 
 export function clearSession() {
-  localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
 }
 
+// Optimistic only: a cached user doesn't prove the cookie is still valid
+// (it may have expired, or been revoked by "log out of all devices" on
+// another tab). The real check happens on the first authenticated request;
+// request() below redirects here on a 401 either way.
 export function requireAuth() {
-  const token = getToken();
-  if (!token) {
+  if (!getUser()) {
     window.location.href = '/index.html';
     return null;
   }
-  return token;
+  return true;
 }
 
 class ApiError extends Error {
@@ -46,22 +46,24 @@ class ApiError extends Error {
 }
 
 async function request(path, { method = 'GET', body, auth = false } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = getToken();
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (devSkipGateActive()) headers['X-Dev-Skip-Gate'] = '1';
-  }
+  const headers = { 'Content-Type': 'application/json', 'X-Requested-With': 'nightcord' };
+  if (auth && devSkipGateActive()) headers['X-Dev-Skip-Gate'] = '1';
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers,
+    credentials: 'include', // send/receive the httpOnly session cookie, including cross-site (Vercel <-> Railway)
     body: body ? JSON.stringify(body) : undefined,
   });
 
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
+    if (auth && res.status === 401) {
+      // Cookie missing/expired/revoked -- the cached user object is stale.
+      clearSession();
+      window.location.href = '/index.html';
+    }
     const detail = data.detail;
     const message = typeof detail === 'string' ? detail : detail?.message || 'Something went wrong.';
     throw new ApiError(message, res.status, detail);
@@ -82,6 +84,14 @@ export async function login({ email, password }) {
     method: 'POST',
     body: { email, password },
   });
+}
+
+export async function logout() {
+  return request('/auth/logout', { method: 'POST' });
+}
+
+export async function logoutAllDevices() {
+  return request('/auth/logout-all', { method: 'POST', auth: true });
 }
 
 export async function listRooms() {
@@ -109,7 +119,10 @@ export async function googleAuth(credential, timezone) {
 }
 
 export function connectRoomSocket(roomId) {
-  const params = new URLSearchParams({ token: getToken() });
+  const params = new URLSearchParams();
   if (devSkipGateActive()) params.set('skip_gate', '1');
-  return new WebSocket(`${WS_URL}/ws/rooms/${roomId}?${params.toString()}`);
+  const query = params.toString();
+  // The session cookie rides along on the WebSocket handshake automatically
+  // (it's a normal HTTP request under the hood) -- no token in the URL.
+  return new WebSocket(`${WS_URL}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
 }

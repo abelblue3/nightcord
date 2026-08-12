@@ -23,8 +23,8 @@ async function run() {
   }
 
   try {
-    const { access_token, user } = await verifyEmail(token);
-    saveSession(access_token, user);
+    const user = await verifyEmail(token);
+    saveSession(user);
     heading.textContent = "You're verified!";
     text.textContent = 'Taking you in…';
     window.location.href = '/rooms.html';

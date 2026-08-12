@@ -3,8 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import dns.exception
 import dns.resolver
-from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi import Cookie, Depends, Header, HTTPException, Response, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from jose import JWTError, jwt
@@ -19,7 +18,8 @@ from app.models import User, as_utc
 MX_LOOKUP_TIMEOUT_SECONDS = 3.0
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+
+ACCESS_TOKEN_COOKIE_NAME = "access_token"
 
 VERIFICATION_TOKEN_EXPIRE_HOURS = 24
 
@@ -55,6 +55,37 @@ def record_failed_login(user: User) -> None:
 def record_successful_login(user: User) -> None:
     user.failed_login_attempts = 0
     user.lockout_until = None
+
+
+def revoke_all_sessions(user: User) -> None:
+    """Invalidates every token already issued for this account, not just the
+    one in the browser that called this -- bumping the version makes every
+    previously-issued JWT fail the `ver` check in decode_user_from_token,
+    regardless of how many devices/browsers hold a copy.
+    """
+    user.token_version += 1
+
+
+def _cookie_flags() -> dict:
+    # Production genuinely spans two different sites (Vercel <-> Railway),
+    # which requires SameSite=None (and therefore Secure) for the cookie to
+    # survive the cross-site hop. Local dev is same-site (just different
+    # localhost ports), so Lax without Secure works over plain http.
+    is_prod = settings.environment == "production"
+    return {"httponly": True, "secure": is_prod, "samesite": "none" if is_prod else "lax"}
+
+
+def set_auth_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=ACCESS_TOKEN_COOKIE_NAME,
+        value=token,
+        max_age=settings.access_token_expire_minutes * 60,
+        **_cookie_flags(),
+    )
+
+
+def clear_auth_cookie(response: Response) -> None:
+    response.delete_cookie(key=ACCESS_TOKEN_COOKIE_NAME, **_cookie_flags())
 
 
 def generate_verification_token() -> tuple[str, datetime]:
@@ -107,27 +138,61 @@ def is_allowed_student_email(email: str) -> bool:
     return has_valid_mx_record(domain)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, token_version: int) -> str:
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "exp": expire}
+    payload = {"sub": subject, "ver": token_version, "exp": expire}
     return jwt.encode(payload, settings.secret_key, algorithm="HS256")
 
 
-def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
+def decode_user_from_token(token: str, db: Session) -> User | None:
+    """Shared by the HTTP cookie dependency and the WebSocket auth path so
+    the ver-claim revocation check can't drift between the two.
+    """
     try:
         payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
-        email = payload.get("sub")
-        if email is None:
-            raise credentials_exception
     except JWTError:
-        raise credentials_exception
+        return None
+
+    email = payload.get("sub")
+    if email is None:
+        return None
 
     user = db.query(User).filter(User.email == email).first()
     if user is None:
+        return None
+
+    if payload.get("ver") != user.token_version:
+        return None
+    return user
+
+
+def get_current_user(
+    access_token: str | None = Cookie(default=None),
+    db: Session = Depends(get_db),
+) -> User:
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+    )
+    if access_token is None:
+        raise credentials_exception
+    user = decode_user_from_token(access_token, db)
+    if user is None:
         raise credentials_exception
     return user
+
+
+def require_csrf_header(x_requested_with: str | None = Header(default=None)) -> None:
+    """Cookie-based auth means the browser attaches credentials to any
+    request to this API, cross-site or not -- SameSite=None in production
+    removes the protection SameSite=Lax/Strict would otherwise give for
+    free. Strict CORS + JSON-only bodies already block the two classic CSRF
+    vectors (a script-driven cross-origin fetch fails CORS preflight; a bare
+    cross-site <form> POST can't produce a JSON body FastAPI will parse) --
+    this header is a deliberate extra layer in case either of those is ever
+    loosened without someone noticing the CSRF implication. A third-party
+    page can't set custom headers on a simple form post, so this is cheap
+    to enforce and cheap for the frontend to satisfy.
+    """
+    if x_requested_with != "nightcord":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing or invalid request header.")

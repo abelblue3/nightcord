@@ -41,16 +41,21 @@ async function main() {
   step('login');
   const loginRes = await fetch(`${API_URL}/auth/login`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'nightcord' },
     body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
   });
   if (!loginRes.ok) throw new Error(`login failed: ${loginRes.status} ${await loginRes.text()}`);
-  const { access_token: token } = await loginRes.json();
+  // The session token now lives in an httpOnly Set-Cookie response header,
+  // not the JSON body. Node's fetch has no browser-style cookie jar, so it
+  // has to be captured and forwarded by hand on every subsequent request.
+  const setCookieHeaders = loginRes.headers.getSetCookie?.() ?? [];
+  const sessionCookie = setCookieHeaders.map((c) => c.split(';')[0]).join('; ');
+  if (!sessionCookie) throw new Error('login succeeded but no session cookie was set');
   console.log('OK');
 
   step('list rooms, find canary-room');
   const roomsRes = await fetch(`${API_URL}/rooms`, {
-    headers: { Authorization: `Bearer ${token}`, 'X-Canary-Token': CANARY_TOKEN },
+    headers: { Cookie: sessionCookie, 'X-Canary-Token': CANARY_TOKEN },
   });
   if (!roomsRes.ok) throw new Error(`list rooms failed: ${roomsRes.status}`);
   const rooms = await roomsRes.json();
@@ -67,7 +72,8 @@ async function main() {
     }, 10_000);
 
     const ws = new WebSocket(
-      `${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}&canary_token=${encodeURIComponent(CANARY_TOKEN)}`
+      `${WS_URL}/ws/rooms/${room.id}?canary_token=${encodeURIComponent(CANARY_TOKEN)}`,
+      { headers: { Cookie: sessionCookie } }
     );
 
     ws.on('open', () => {

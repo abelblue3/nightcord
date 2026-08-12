@@ -1,6 +1,6 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, clearSession, listRooms, createRoom } from './api.js';
+import { requireAuth, getUser, clearSession, listRooms, createRoom, logout, logoutAllDevices } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
@@ -15,9 +15,22 @@ async function init() {
   const user = getUser();
   document.getElementById('user-tag').textContent = user?.display_name ? `hi, ${user.display_name}` : '';
 
-  document.getElementById('logout-btn').addEventListener('click', () => {
-    clearSession();
-    window.location.href = '/index.html';
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    try {
+      await logout();
+    } finally {
+      clearSession();
+      window.location.href = '/index.html';
+    }
+  });
+
+  document.getElementById('logout-all-btn').addEventListener('click', async () => {
+    try {
+      await logoutAllDevices();
+    } finally {
+      clearSession();
+      window.location.href = '/index.html';
+    }
   });
 
   const roomListEl = document.getElementById('room-list');

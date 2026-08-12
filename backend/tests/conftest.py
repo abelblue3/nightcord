@@ -58,7 +58,10 @@ def client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as test_client:
+    # The real frontend always sends this header (see api.js); tests that
+    # specifically exercise the CSRF guard override it per-request instead
+    # of using a client without the default.
+    with TestClient(app, headers={"X-Requested-With": "nightcord"}) as test_client:
         yield test_client
     app.dependency_overrides.clear()
 

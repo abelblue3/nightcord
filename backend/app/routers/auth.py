@@ -1,17 +1,22 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.auth import (
     DUMMY_PASSWORD_HASH,
+    clear_auth_cookie,
     create_access_token,
     generate_verification_token,
+    get_current_user,
     hash_password,
     is_account_locked,
     is_allowed_student_email,
     record_failed_login,
     record_successful_login,
+    require_csrf_header,
+    revoke_all_sessions,
+    set_auth_cookie,
     verify_google_id_token,
     verify_password,
 )
@@ -25,7 +30,6 @@ from app.schemas import (
     LoginRequest,
     MessageResponse,
     ResendVerificationRequest,
-    Token,
     UserCreate,
     UserOut,
     VerifyEmailRequest,
@@ -64,9 +68,9 @@ def signup(request: Request, payload: UserCreate, db: Session = Depends(get_db))
     return user
 
 
-@router.post("/login", response_model=Token)
+@router.post("/login", response_model=UserOut)
 @limiter.limit("10/minute")
-def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)) -> Token:
+def login(request: Request, response: Response, payload: LoginRequest, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter(User.email == payload.email).first()
     locked = user is not None and is_account_locked(user)
 
@@ -98,13 +102,14 @@ def login(request: Request, payload: LoginRequest, db: Session = Depends(get_db)
             detail="Please verify your email before logging in — check your inbox for the link.",
         )
 
-    token = create_access_token(subject=user.email)
-    return Token(access_token=token, user=user)
+    token = create_access_token(subject=user.email, token_version=user.token_version)
+    set_auth_cookie(response, token)
+    return user
 
 
-@router.post("/verify-email", response_model=Token)
+@router.post("/verify-email", response_model=UserOut)
 @limiter.limit("20/hour")
-def verify_email(request: Request, payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> Token:
+def verify_email(request: Request, response: Response, payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> User:
     user = db.query(User).filter(User.verification_token == payload.token).first()
 
     if not user or not user.verification_token_expires_at:
@@ -121,12 +126,13 @@ def verify_email(request: Request, payload: VerifyEmailRequest, db: Session = De
     user.verification_token_expires_at = None
     db.commit()
 
-    token = create_access_token(subject=user.email)
-    return Token(access_token=token, user=user)
+    token = create_access_token(subject=user.email, token_version=user.token_version)
+    set_auth_cookie(response, token)
+    return user
 
 
-@router.post("/google", response_model=Token)
-def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> Token:
+@router.post("/google", response_model=UserOut)
+def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> User:
     claims = verify_google_id_token(payload.credential)
 
     email = claims.get("email")
@@ -169,8 +175,30 @@ def google_auth(payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> To
     db.commit()
     db.refresh(user)
 
-    token = create_access_token(subject=user.email)
-    return Token(access_token=token, user=user)
+    token = create_access_token(subject=user.email, token_version=user.token_version)
+    set_auth_cookie(response, token)
+    return user
+
+
+@router.post("/logout", response_model=MessageResponse)
+def logout(response: Response) -> MessageResponse:
+    """Ends this browser's session only -- the token itself isn't revoked,
+    so a copy held elsewhere (e.g. another device) is unaffected. See
+    /auth/logout-all for actual server-side revocation.
+    """
+    clear_auth_cookie(response)
+    return MessageResponse(message="Logged out.")
+
+
+@router.post("/logout-all", response_model=MessageResponse, dependencies=[Depends(require_csrf_header)])
+def logout_all(response: Response, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> MessageResponse:
+    """Invalidates every token issued for this account, on every device,
+    by bumping token_version -- not just this browser's cookie.
+    """
+    revoke_all_sessions(user)
+    db.commit()
+    clear_auth_cookie(response)
+    return MessageResponse(message="Logged out of all devices.")
 
 
 @router.post("/resend-verification", response_model=MessageResponse)

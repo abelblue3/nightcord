@@ -1,6 +1,6 @@
 import './sentry.js';
 import './style.css';
-import { signup, login, saveSession, getToken, resendVerification, googleAuth } from './api.js';
+import { signup, login, saveSession, getUser, resendVerification, googleAuth } from './api.js';
 import { getBrowserTimezone } from './nightGate.js';
 import { renderGoogleButton } from './googleAuth.js';
 
@@ -11,7 +11,7 @@ import { renderGoogleButton } from './googleAuth.js';
 init();
 
 function init() {
-  if (getToken()) {
+  if (getUser()) {
     window.location.href = '/rooms.html';
     return;
   }
@@ -57,16 +57,16 @@ function init() {
   tabLogin.addEventListener('click', () => showTab('login'));
   tabSignup.addEventListener('click', () => showTab('signup'));
 
-  async function afterAuth(token, user) {
-    saveSession(token, user);
+  async function afterAuth(user) {
+    saveSession(user);
     window.location.href = '/rooms.html';
   }
 
   renderGoogleButton(document.getElementById('google-signin-btn'), async (credential) => {
     clearError();
     try {
-      const { access_token, user } = await googleAuth(credential, getBrowserTimezone());
-      await afterAuth(access_token, user);
+      const user = await googleAuth(credential, getBrowserTimezone());
+      await afterAuth(user);
     } catch (err) {
       showError(err.message);
     }
@@ -82,8 +82,8 @@ function init() {
     const password = document.getElementById('login-password').value;
 
     try {
-      const { access_token, user } = await login({ email, password });
-      await afterAuth(access_token, user);
+      const user = await login({ email, password });
+      await afterAuth(user);
     } catch (err) {
       showError(err.message);
     } finally {

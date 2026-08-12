@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import {
   saveSession,
-  getToken,
   getUser,
   clearSession,
   requireAuth,
   signup,
   login,
+  logout,
+  logoutAllDevices,
   listRooms,
   createRoom,
   connectRoomSocket,
@@ -27,9 +28,8 @@ beforeEach(() => {
 });
 
 describe('session storage', () => {
-  it('saveSession stores token and user, getToken/getUser read them back', () => {
-    saveSession('abc123', { id: 1, display_name: 'Jane' });
-    expect(getToken()).toBe('abc123');
+  it('saveSession stores the user, getUser reads it back', () => {
+    saveSession({ id: 1, display_name: 'Jane' });
     expect(getUser()).toEqual({ id: 1, display_name: 'Jane' });
   });
 
@@ -37,21 +37,24 @@ describe('session storage', () => {
     expect(getUser()).toBeNull();
   });
 
-  it('clearSession removes both', () => {
-    saveSession('abc123', { id: 1 });
+  it('clearSession removes it', () => {
+    saveSession({ id: 1 });
     clearSession();
-    expect(getToken()).toBeNull();
     expect(getUser()).toBeNull();
   });
 });
 
 describe('requireAuth', () => {
-  it('returns the token when one exists', () => {
-    saveSession('abc123', { id: 1 });
-    expect(requireAuth()).toBe('abc123');
+  // The session token itself lives in an httpOnly cookie this code can't
+  // read -- requireAuth only checks for a cached user as a fast, optimistic
+  // UX gate. The real check happens server-side on the first request.
+
+  it('returns true when a cached user exists', () => {
+    saveSession({ id: 1 });
+    expect(requireAuth()).toBe(true);
   });
 
-  it('redirects to /index.html and returns null when there is no token', () => {
+  it('redirects to /index.html and returns null when there is no cached user', () => {
     const originalLocation = window.location;
     delete window.location;
     window.location = { href: '' };
@@ -94,17 +97,22 @@ describe('request wrapper (via signup/login)', () => {
     await expect(login({ email: 'a@university.edu', password: 'x' })).rejects.toThrow('Something went wrong.');
   });
 
-  it('authenticated requests attach the Authorization header when a token exists', async () => {
-    saveSession('my-token', { id: 1 });
+  it('every request sends credentials so the httpOnly session cookie is included', async () => {
     mockFetchOnce(200, []);
-
     await listRooms();
-
     const [, options] = global.fetch.mock.calls[0];
-    expect(options.headers.Authorization).toBe('Bearer my-token');
+    expect(options.credentials).toBe('include');
   });
 
-  it('requests with no session omit the Authorization header', async () => {
+  it('every request sends the CSRF header', async () => {
+    mockFetchOnce(200, []);
+    await listRooms();
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers['X-Requested-With']).toBe('nightcord');
+  });
+
+  it('no request ever attaches an Authorization header -- there is no client-readable token', async () => {
+    saveSession({ id: 1 });
     mockFetchOnce(200, []);
     await listRooms();
     const [, options] = global.fetch.mock.calls[0];
@@ -112,7 +120,6 @@ describe('request wrapper (via signup/login)', () => {
   });
 
   it('createRoom sends the room name in the body', async () => {
-    saveSession('my-token', { id: 1 });
     mockFetchOnce(201, { id: 5, name: 'late-night-calc' });
 
     await createRoom('late-night-calc');
@@ -131,7 +138,7 @@ describe('request wrapper (via signup/login)', () => {
   });
 
   it('googleAuth sends the credential and timezone', async () => {
-    mockFetchOnce(200, { access_token: 'tok', user: { id: 1 } });
+    mockFetchOnce(200, { id: 1 });
 
     await googleAuth('fake-credential', 'America/Chicago');
 
@@ -139,11 +146,58 @@ describe('request wrapper (via signup/login)', () => {
     expect(url).toContain('/auth/google');
     expect(JSON.parse(options.body)).toEqual({ credential: 'fake-credential', timezone: 'America/Chicago' });
   });
+
+  it('logout posts to /auth/logout', async () => {
+    mockFetchOnce(200, { message: 'Logged out.' });
+    await logout();
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/auth/logout');
+    expect(options.method).toBe('POST');
+  });
+
+  it('logoutAllDevices posts to /auth/logout-all', async () => {
+    mockFetchOnce(200, { message: 'Logged out of all devices.' });
+    await logoutAllDevices();
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/auth/logout-all');
+    expect(options.method).toBe('POST');
+  });
+});
+
+describe('401 on an authenticated request', () => {
+  it('clears the cached user and redirects, since the cookie is expired/revoked', async () => {
+    const originalLocation = window.location;
+    delete window.location;
+    window.location = { href: '' };
+
+    saveSession({ id: 1, display_name: 'Jane' });
+    mockFetchOnce(401, { detail: 'Could not validate credentials' });
+
+    await expect(listRooms()).rejects.toThrow();
+
+    expect(getUser()).toBeNull();
+    expect(window.location.href).toBe('/index.html');
+
+    window.location = originalLocation;
+  });
+
+  it('does not redirect on a 401 from a non-authenticated call like login', async () => {
+    const originalLocation = window.location;
+    delete window.location;
+    window.location = { href: '' };
+
+    mockFetchOnce(401, { detail: 'Incorrect email or password.' });
+
+    await expect(login({ email: 'a@university.edu', password: 'wrong' })).rejects.toThrow();
+
+    expect(window.location.href).toBe('');
+
+    window.location = originalLocation;
+  });
 });
 
 describe('night-gate error data', () => {
   it('a 403 with a structured detail exposes .status and .data on the thrown error', async () => {
-    saveSession('my-token', { id: 1 });
     mockFetchOnce(403, { detail: { message: 'nightcord is closed right now for your school.', timezone: 'America/New_York' } });
 
     await expect(listRooms()).rejects.toMatchObject({
@@ -169,7 +223,7 @@ describe('dev gate bypass header', () => {
   });
 
   it('attaches X-Dev-Skip-Gate to authenticated requests when the bypass is on', async () => {
-    saveSession('my-token', { id: 1 });
+    saveSession({ id: 1 });
     window.history.replaceState({}, '', '/?skipGate=1');
     mockFetchOnce(200, []);
 
@@ -180,7 +234,6 @@ describe('dev gate bypass header', () => {
   });
 
   it('omits the header when the bypass is off', async () => {
-    saveSession('my-token', { id: 1 });
     mockFetchOnce(200, []);
 
     await listRooms();
@@ -195,9 +248,7 @@ describe('connectRoomSocket', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('builds a ws URL with the room id and current token', () => {
-    saveSession('my-token', { id: 1 });
-
+  it('builds a ws URL with just the room id -- the session cookie rides along automatically', () => {
     let capturedUrl;
     global.WebSocket = class {
       constructor(url) {
@@ -208,12 +259,11 @@ describe('connectRoomSocket', () => {
     connectRoomSocket(42);
 
     expect(capturedUrl).toContain('/ws/rooms/42');
-    expect(capturedUrl).toContain('token=my-token');
+    expect(capturedUrl).not.toContain('token=');
     expect(capturedUrl).not.toContain('skip_gate');
   });
 
   it('includes skip_gate=1 when the dev bypass is on', () => {
-    saveSession('my-token', { id: 1 });
     window.history.replaceState({}, '', '/?skipGate=1');
 
     let capturedUrl;

@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, WebSocketException, status
-from jose import JWTError, jwt
 from sqlalchemy.orm import Session
 
 from app import gate
-from app.config import settings
+from app.auth import ACCESS_TOKEN_COOKIE_NAME, decode_user_from_token
 from app.connection_manager import manager
 from app.database import get_db
 from app.models import Message, Room, User
@@ -11,16 +10,11 @@ from app.models import Message, Room, User
 router = APIRouter(tags=["chat"])
 
 
-def get_user_from_token(token: str, db: Session) -> User:
-    try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
-        email = payload.get("sub")
-    except JWTError:
-        email = None
-
-    user = db.query(User).filter(User.email == email).first() if email else None
+def get_user_from_websocket(websocket: WebSocket, db: Session) -> User:
+    token = websocket.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
+    user = decode_user_from_token(token, db) if token else None
     if user is None:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing token")
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing session")
     return user
 
 
@@ -28,12 +22,11 @@ def get_user_from_token(token: str, db: Session) -> User:
 async def room_chat(
     websocket: WebSocket,
     room_id: int,
-    token: str,
     skip_gate: str | None = None,
     canary_token: str | None = None,
     db: Session = Depends(get_db),
 ):
-    user = get_user_from_token(token, db)
+    user = get_user_from_websocket(websocket, db)
 
     room = db.get(Room, room_id)
     if not room:

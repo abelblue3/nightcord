@@ -1,6 +1,6 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket } from './api.js';
+import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket, logout } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
@@ -23,9 +23,13 @@ async function init() {
 
   document.getElementById('room-title').textContent = roomName.toUpperCase();
 
-  document.getElementById('logout-btn').addEventListener('click', () => {
-    clearSession();
-    window.location.href = '/index.html';
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    try {
+      await logout();
+    } finally {
+      clearSession();
+      window.location.href = '/index.html';
+    }
   });
 
   const chatLog = document.getElementById('chat-log');

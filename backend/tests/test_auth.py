@@ -191,9 +191,8 @@ def test_login_success_after_verification(client, db_session):
     _signup_and_verify(client, db_session, "verified@university.edu")
     res = client.post("/auth/login", json={"email": "verified@university.edu", "password": "password123"})
     assert res.status_code == 200
-    body = res.json()
-    assert body["access_token"]
-    assert body["user"]["is_verified"] is True
+    assert "access_token" in res.cookies
+    assert res.json()["is_verified"] is True
 
 
 # --- verify-email ---
@@ -262,9 +261,10 @@ def test_google_auth_creates_new_verified_user(client, monkeypatch):
 
     res = client.post("/auth/google", json={"credential": "fake-credential"})
     assert res.status_code == 200
+    assert "access_token" in res.cookies
     body = res.json()
-    assert body["user"]["email"] == "student@university.edu"
-    assert body["user"]["is_verified"] is True
+    assert body["email"] == "student@university.edu"
+    assert body["is_verified"] is True
 
 
 def test_google_auth_rejects_unverified_google_email(client, monkeypatch):
@@ -380,6 +380,42 @@ def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, db_sessio
     _signup_and_verify(client, db_session, "realwrong@university.edu")
     client.post("/auth/login", json={"email": "realwrong@university.edu", "password": "wrong"})
     assert len(calls) == 2
+
+
+# --- session cookie: logout and revocation ---
+
+
+def test_logout_clears_the_cookie(client, db_session):
+    _signup_and_verify(client, db_session, "logoutme@university.edu")
+    client.post("/auth/login", json={"email": "logoutme@university.edu", "password": "password123"})
+    assert "access_token" in client.cookies
+
+    res = client.post("/auth/logout")
+    assert res.status_code == 200
+    assert "access_token" not in client.cookies
+
+
+def test_logout_all_invalidates_the_token_everywhere(client, db_session):
+    _signup_and_verify(client, db_session, "revokeme@university.edu")
+    client.post("/auth/login", json={"email": "revokeme@university.edu", "password": "password123"})
+    old_token = client.cookies["access_token"]
+
+    res = client.post("/auth/logout-all")
+    assert res.status_code == 200
+
+    # A copy of the pre-revocation token, as if it were cached in another
+    # browser, must be rejected too -- proving the token itself is dead, not
+    # just that this client's local cookie got cleared.
+    res = client.get("/rooms", cookies={"access_token": old_token})
+    assert res.status_code == 401
+
+
+def test_logout_all_requires_csrf_header(client, db_session):
+    _signup_and_verify(client, db_session, "csrfcheck@university.edu")
+    client.post("/auth/login", json={"email": "csrfcheck@university.edu", "password": "password123"})
+
+    res = client.post("/auth/logout-all", headers={"X-Requested-With": "not-nightcord"})
+    assert res.status_code == 403
 
 
 # --- helpers ---

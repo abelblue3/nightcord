@@ -142,83 +142,76 @@ def test_google_auth_stores_institution_timezone(client, db_session, monkeypatch
 
 
 @pytest.fixture()
-def auth_headers(client, db_session):
+def logged_in_gate_user(client, db_session):
     client.post(
         "/auth/signup",
         json={"email": "gateuser@university.edu", "password": "password123", "display_name": "Gate User"},
     )
     user = db_session.query(User).filter(User.email == "gateuser@university.edu").first()
     client.post("/auth/verify-email", json={"token": user.verification_token})
-    login_res = client.post("/auth/login", json={"email": "gateuser@university.edu", "password": "password123"})
-    token = login_res.json()["access_token"]
-    return {"Authorization": f"Bearer {token}"}
+    client.post("/auth/login", json={"email": "gateuser@university.edu", "password": "password123"})
 
 
-def test_rooms_accessible_when_night(client, auth_headers):
+def test_rooms_accessible_when_night(client, logged_in_gate_user):
     # the autouse always_night fixture makes this the default state
-    res = client.get("/rooms", headers=auth_headers)
+    res = client.get("/rooms")
     assert res.status_code == 200
 
 
-def test_rooms_blocked_when_closed(client, auth_headers, monkeypatch):
+def test_rooms_blocked_when_closed(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
-    res = client.get("/rooms", headers=auth_headers)
+    res = client.get("/rooms")
     assert res.status_code == 403
     assert "timezone" in res.json()["detail"]
 
 
-def test_rooms_dev_bypass_header_overrides_closed_gate(client, auth_headers, monkeypatch):
+def test_rooms_dev_bypass_header_overrides_closed_gate(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "development")
-    headers = {**auth_headers, "X-Dev-Skip-Gate": "1"}
-    res = client.get("/rooms", headers=headers)
+    res = client.get("/rooms", headers={"X-Dev-Skip-Gate": "1"})
     assert res.status_code == 200
 
 
-def test_rooms_dev_bypass_never_works_in_production(client, auth_headers, monkeypatch):
+def test_rooms_dev_bypass_never_works_in_production(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "production")
-    headers = {**auth_headers, "X-Dev-Skip-Gate": "1"}
-    res = client.get("/rooms", headers=headers)
+    res = client.get("/rooms", headers={"X-Dev-Skip-Gate": "1"})
     assert res.status_code == 403
 
 
-def test_rooms_canary_bypass_overrides_closed_gate(client, auth_headers, monkeypatch):
+def test_rooms_canary_bypass_overrides_closed_gate(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.canary_bypass_token", "canary-secret")
-    headers = {**auth_headers, "X-Canary-Token": "canary-secret"}
-    res = client.get("/rooms", headers=headers)
+    res = client.get("/rooms", headers={"X-Canary-Token": "canary-secret"})
     assert res.status_code == 200
 
 
-def test_create_room_and_messages_also_gated(client, auth_headers, monkeypatch):
-    room = client.post("/rooms", json={"name": "should-not-matter"}, headers=auth_headers).json()
+def test_create_room_and_messages_also_gated(client, logged_in_gate_user, monkeypatch):
+    room = client.post("/rooms", json={"name": "should-not-matter"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
 
-    assert client.post("/rooms", json={"name": "closed-attempt"}, headers=auth_headers).status_code == 403
-    assert client.get(f"/rooms/{room['id']}/messages", headers=auth_headers).status_code == 403
+    assert client.post("/rooms", json={"name": "closed-attempt"}).status_code == 403
+    assert client.get(f"/rooms/{room['id']}/messages").status_code == 403
 
 
-def test_websocket_rejects_when_gate_closed(client, auth_headers, monkeypatch):
-    room = client.post("/rooms", json={"name": "gate-ws-closed-room"}, headers=auth_headers).json()
-    token = auth_headers["Authorization"].split(" ")[1]
+def test_websocket_rejects_when_gate_closed(client, logged_in_gate_user, monkeypatch):
+    room = client.post("/rooms", json={"name": "gate-ws-closed-room"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
 
     with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(f"/ws/rooms/{room['id']}?token={token}"):
+        with client.websocket_connect(f"/ws/rooms/{room['id']}"):
             pass
 
 
-def test_websocket_dev_bypass_allows_connection_when_closed(client, auth_headers, monkeypatch):
-    room = client.post("/rooms", json={"name": "gate-ws-bypass-room"}, headers=auth_headers).json()
-    token = auth_headers["Authorization"].split(" ")[1]
+def test_websocket_dev_bypass_allows_connection_when_closed(client, logged_in_gate_user, monkeypatch):
+    room = client.post("/rooms", json={"name": "gate-ws-bypass-room"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "development")
 
-    with client.websocket_connect(f"/ws/rooms/{room['id']}?token={token}&skip_gate=1") as ws:
+    with client.websocket_connect(f"/ws/rooms/{room['id']}?skip_gate=1") as ws:
         ws.send_json({"content": "hello despite closed gate"})
         received = ws.receive_json()
     assert received["content"] == "hello despite closed gate"
