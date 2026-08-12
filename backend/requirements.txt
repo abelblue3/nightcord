@@ -10,6 +10,7 @@ bcrypt==4.0.1
 python-dotenv==1.2.2
 alembic==1.13.3
 google-auth==2.35.0
+requests==2.34.2
 dnspython==2.6.1
 tzdata==2024.2
 sentry-sdk[fastapi]==2.67.1
