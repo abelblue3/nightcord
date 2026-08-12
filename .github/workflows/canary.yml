@@ -27,4 +27,5 @@ jobs:
         env:
           CANARY_EMAIL: ${{ secrets.CANARY_EMAIL }}
           CANARY_PASSWORD: ${{ secrets.CANARY_PASSWORD }}
+          CANARY_BYPASS_TOKEN: ${{ secrets.CANARY_BYPASS_TOKEN }}
         run: node canary.mjs

@@ -10,10 +10,15 @@ const API_URL = process.env.CANARY_API_URL || 'https://nightcord-production.up.r
 const WS_URL = API_URL.replace(/^http/, 'ws');
 const EMAIL = process.env.CANARY_EMAIL;
 const PASSWORD = process.env.CANARY_PASSWORD;
+const CANARY_TOKEN = process.env.CANARY_BYPASS_TOKEN;
 const ROOM_NAME = 'canary-room';
 
 if (!EMAIL || !PASSWORD) {
   console.error('CANARY_EMAIL / CANARY_PASSWORD are not set.');
+  process.exit(1);
+}
+if (!CANARY_TOKEN) {
+  console.error('CANARY_BYPASS_TOKEN is not set -- the canary account has no resolved timezone and will be blocked by the night gate without it.');
   process.exit(1);
 }
 
@@ -45,7 +50,7 @@ async function main() {
 
   step('list rooms, find canary-room');
   const roomsRes = await fetch(`${API_URL}/rooms`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, 'X-Canary-Token': CANARY_TOKEN },
   });
   if (!roomsRes.ok) throw new Error(`list rooms failed: ${roomsRes.status}`);
   const rooms = await roomsRes.json();
@@ -61,7 +66,9 @@ async function main() {
       reject(new Error('timed out waiting for chat message echo'));
     }, 10_000);
 
-    const ws = new WebSocket(`${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}`);
+    const ws = new WebSocket(
+      `${WS_URL}/ws/rooms/${room.id}?token=${encodeURIComponent(token)}&canary_token=${encodeURIComponent(CANARY_TOKEN)}`
+    );
 
     ws.on('open', () => {
       ws.send(JSON.stringify({ content: nonce }));
