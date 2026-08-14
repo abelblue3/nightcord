@@ -68,12 +68,14 @@ def revoke_all_sessions(user: User) -> None:
 
 
 def _cookie_flags() -> dict:
-    # Production genuinely spans two different sites (Vercel <-> Railway),
-    # which requires SameSite=None (and therefore Secure) for the cookie to
-    # survive the cross-site hop. Local dev is same-site (just different
-    # localhost ports), so Lax without Secure works over plain http.
-    is_prod = settings.environment == "production"
-    return {"httponly": True, "secure": is_prod, "samesite": "none" if is_prod else "lax"}
+    # Any real deployed environment (prod, beta, ...) genuinely spans two
+    # different sites (Vercel <-> Railway), which requires SameSite=None
+    # (and therefore Secure) for the cookie to survive the cross-site hop.
+    # Local dev is same-site (just different localhost ports), so Lax
+    # without Secure works over plain http -- it's the only environment
+    # that gets the relaxed flags, everything else defaults secure.
+    is_secure_env = settings.environment != "development"
+    return {"httponly": True, "secure": is_secure_env, "samesite": "none" if is_secure_env else "lax"}
 
 
 def set_auth_cookie(response: Response, token: str) -> None:

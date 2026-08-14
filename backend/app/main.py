@@ -42,7 +42,7 @@ async def add_security_headers(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
-    if settings.environment == "production":
+    if settings.environment != "development":
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains"
     return response
 

@@ -6,7 +6,7 @@ os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("GOOGLE_CLIENT_ID", "test-google-client-id")
 os.environ.setdefault("SENTRY_DSN", "")  # tests must never report to the real Sentry project
-os.environ.setdefault("ENVIRONMENT", "test")
+os.environ.setdefault("ENVIRONMENT", "development")
 os.environ.setdefault("CANARY_BYPASS_TOKEN", "")
 
 import pytest

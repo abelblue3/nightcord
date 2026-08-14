@@ -6,6 +6,7 @@ import pytest
 import dns.resolver
 
 from app.auth import (
+    _cookie_flags,
     has_valid_mx_record,
     hash_password,
     is_allowed_student_email,
@@ -165,6 +166,29 @@ def test_hash_and_verify_password_roundtrip():
 def test_verify_password_handles_none_hash():
     # Google-only accounts have no password hash at all.
     assert verify_password("anything", None) is False
+
+
+# --- session cookie flags: secure by default, relaxed only for local dev ---
+
+
+def test_cookie_flags_relaxed_in_development(monkeypatch):
+    monkeypatch.setattr("app.auth.settings.environment", "development")
+    flags = _cookie_flags()
+    assert flags == {"httponly": True, "secure": False, "samesite": "lax"}
+
+
+def test_cookie_flags_secure_in_production(monkeypatch):
+    monkeypatch.setattr("app.auth.settings.environment", "production")
+    flags = _cookie_flags()
+    assert flags == {"httponly": True, "secure": True, "samesite": "none"}
+
+
+def test_cookie_flags_secure_on_beta_too(monkeypatch):
+    # Opt-in relaxation ("== development"), not opt-out ("!= production") --
+    # any other real deployed environment must default secure.
+    monkeypatch.setattr("app.auth.settings.environment", "beta")
+    flags = _cookie_flags()
+    assert flags == {"httponly": True, "secure": True, "samesite": "none"}
 
 
 # --- signup ---

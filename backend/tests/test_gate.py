@@ -72,7 +72,7 @@ def test_resolve_signup_timezone_falls_back_to_utc_when_nothing_valid():
 # --- dev / canary bypass ---
 
 
-def test_dev_bypass_active_outside_production(monkeypatch):
+def test_dev_bypass_active_in_development(monkeypatch):
     monkeypatch.setattr("app.gate.settings.environment", "development")
     assert dev_bypass_active("1") is True
     assert dev_bypass_active("0") is False
@@ -81,6 +81,14 @@ def test_dev_bypass_active_outside_production(monkeypatch):
 
 def test_dev_bypass_never_active_in_production(monkeypatch):
     monkeypatch.setattr("app.gate.settings.environment", "production")
+    assert dev_bypass_active("1") is False
+
+
+def test_dev_bypass_never_active_in_any_other_deployed_environment(monkeypatch):
+    # Opt-in ("== development"), not opt-out ("!= production") -- a real
+    # deployed environment we haven't explicitly named yet (beta, staging,
+    # ...) must default to secure, not accidentally inherit the bypass.
+    monkeypatch.setattr("app.gate.settings.environment", "beta")
     assert dev_bypass_active("1") is False
 
 
@@ -172,6 +180,13 @@ def test_rooms_dev_bypass_header_overrides_closed_gate(client, logged_in_gate_us
 def test_rooms_dev_bypass_never_works_in_production(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "production")
+    res = client.get("/rooms", headers={"X-Dev-Skip-Gate": "1"})
+    assert res.status_code == 403
+
+
+def test_rooms_dev_bypass_never_works_on_beta(client, logged_in_gate_user, monkeypatch):
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
+    monkeypatch.setattr("app.gate.settings.environment", "beta")
     res = client.get("/rooms", headers={"X-Dev-Skip-Gate": "1"})
     assert res.status_code == 403
 

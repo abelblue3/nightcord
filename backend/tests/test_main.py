@@ -17,6 +17,14 @@ def test_hsts_present_in_production(client, monkeypatch):
     assert res.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"
 
 
+def test_hsts_present_on_beta_too(client, monkeypatch):
+    # Any real deployed environment gets the secure defaults, not just the
+    # one literally named "production" -- see app/main.py's comment.
+    monkeypatch.setattr("app.main.settings.environment", "beta")
+    res = client.get("/health")
+    assert res.headers["strict-transport-security"] == "max-age=63072000; includeSubDomains"
+
+
 def test_security_headers_present_on_error_responses_too(client):
     res = client.get("/rooms")
     assert res.status_code == 401

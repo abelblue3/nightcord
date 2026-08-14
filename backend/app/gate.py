@@ -59,9 +59,12 @@ def is_night_in_timezone(tz_name: str, now: datetime | None = None) -> bool:
 
 def dev_bypass_active(skip_gate_header: str | None) -> bool:
     """Mirrors the frontend's ?skipGate=1 dev-only escape hatch, extended to
-    actually affect server enforcement. Only ever honored outside production.
+    actually affect server enforcement. Only ever honored on a local dev
+    machine -- explicitly opt-in ("== development"), not opt-out ("!=
+    production"), so any other deployed environment (beta, staging, ...)
+    is secure by default even if nobody remembered to special-case it.
     """
-    return settings.environment != "production" and skip_gate_header == "1"
+    return settings.environment == "development" and skip_gate_header == "1"
 
 
 def canary_bypass_active(canary_token_header: str | None) -> bool:
