@@ -17,11 +17,13 @@ function wsBaseUrl() {
 const USER_KEY = 'nightcord_user';
 
 // The session token itself lives in an httpOnly cookie the backend sets --
-// this JS never sees it. What's cached here is only the non-sensitive user
-// object, purely so the UI has something to render immediately; the cookie
-// (checked server-side on every request) is the actual source of truth.
-export function saveSession(user) {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+// this JS never sees it. What's cached here is only what the pages render
+// (id, name, school timezone), so the UI has something to show immediately;
+// the cookie (checked server-side on every request) is the actual source of
+// truth. The email is deliberately left out: nothing displays it, and
+// anything in localStorage is readable by any script on the page.
+export function saveSession({ id, display_name, timezone }) {
+  localStorage.setItem(USER_KEY, JSON.stringify({ id, display_name, timezone }));
 }
 
 export function getUser() {

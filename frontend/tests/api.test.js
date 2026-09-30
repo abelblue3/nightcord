@@ -33,6 +33,12 @@ describe('session storage', () => {
     expect(getUser()).toEqual({ id: 1, display_name: 'Jane' });
   });
 
+  it('saveSession keeps only what the pages render -- never the email', () => {
+    saveSession({ id: 1, email: 'jane@university.edu', display_name: 'Jane', timezone: 'America/Chicago' });
+    expect(getUser()).toEqual({ id: 1, display_name: 'Jane', timezone: 'America/Chicago' });
+    expect(localStorage.getItem('nightcord_user')).not.toContain('jane@university.edu');
+  });
+
   it('getUser returns null when nothing is stored', () => {
     expect(getUser()).toBeNull();
   });

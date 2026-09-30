@@ -1,4 +1,6 @@
 import json
+import time
+from collections import deque
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketException, status
 from sqlalchemy.orm import Session
@@ -16,6 +18,38 @@ router = APIRouter(tags=["chat"])
 # anything longer outright (SQLite silently stores it), so over-long content
 # has to be dropped here rather than left to fail at commit time.
 MAX_MESSAGE_LENGTH = Message.__table__.c.content.type.length
+
+# Per connection, at most SEND_LIMIT frames per SEND_WINDOW_SECONDS; extra
+# frames are dropped before they reach the database. A connection that keeps
+# flooding past FLOOD_MULTIPLIER times the limit is disconnected.
+SEND_LIMIT = 5
+SEND_WINDOW_SECONDS = 5.0
+FLOOD_MULTIPLIER = 3
+
+
+class SendLimiter:
+    """Sliding-window counter of every frame a connection sends, including
+    the ones it drops -- otherwise a flood of dropped frames would never
+    count toward the disconnect threshold.
+    """
+
+    def __init__(self, clock=time.monotonic):
+        self._clock = clock
+        self._recent: deque[float] = deque()
+
+    def check(self) -> str:
+        """Records one frame and returns "ok", "drop", or "flood"."""
+        now = self._clock()
+        while self._recent and now - self._recent[0] >= SEND_WINDOW_SECONDS:
+            self._recent.popleft()
+        self._recent.append(now)
+
+        count = len(self._recent)
+        if count <= SEND_LIMIT:
+            return "ok"
+        if count > SEND_LIMIT * FLOOD_MULTIPLIER:
+            return "flood"
+        return "drop"
 
 
 def origin_allowed(websocket: WebSocket) -> bool:
@@ -81,6 +115,7 @@ async def room_chat(
             raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=f"gate-closed:{user_tz}")
 
     await manager.connect(room_id, websocket)
+    limiter = SendLimiter()
     # Whatever ends this loop -- a normal disconnect or an unexpected error --
     # the connection must come out of the room's broadcast list. A dead socket
     # left behind would make every later broadcast in the room fail.
@@ -89,6 +124,13 @@ async def room_chat(
             frame = await websocket.receive()
             if frame["type"] == "websocket.disconnect":
                 break
+
+            verdict = limiter.check()
+            if verdict == "flood":
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="rate-limited")
+                break
+            if verdict == "drop":
+                continue
 
             content = parse_message_content(frame.get("text"))
             if content is None:
