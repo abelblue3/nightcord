@@ -132,7 +132,8 @@ def google_auth(request: Request, response: Response, payload: GoogleAuthRequest
             email=email,
             hashed_password=None,
             google_id=google_id,
-            display_name=claims.get("name") or email.split("@")[0],
+            # Google names can exceed the column; trim rather than fail the sign-in.
+            display_name=(claims.get("name") or email.split("@")[0])[:100],
             timezone=resolve_signup_timezone(school, payload.timezone),
         )
         db.add(user)
@@ -145,7 +146,7 @@ def google_auth(request: Request, response: Response, payload: GoogleAuthRequest
     return user
 
 
-@router.post("/logout", response_model=MessageResponse)
+@router.post("/logout", response_model=MessageResponse, dependencies=[Depends(require_csrf_header)])
 def logout(response: Response) -> MessageResponse:
     """Ends this browser's session only -- the token itself isn't revoked,
     so a copy held elsewhere (e.g. another device) is unaffected. See

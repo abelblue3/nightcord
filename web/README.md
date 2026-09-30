@@ -53,7 +53,7 @@ such as the canary) are allowed through to FastAPI's session check.
 | `BACKEND_URL` | `http://localhost:8000` | Where FastAPI is. On Railway: its private-network address. |
 | `PUBLIC_HOST` | — | This service's public hostname, e.g. `nightcord.up.railway.app`. Allowed as a WebSocket origin and added to the CSP. |
 | `ALLOWED_ORIGINS` | `http://localhost:4567,http://localhost:5173` | Extra origins allowed to open chat sockets (comma-separated). |
-| `ENVIRONMENT` | `development` | Anything else turns on HSTS. |
+| `ENVIRONMENT` | `production` | Set `development` locally; anything else turns on HSTS. |
 | `DIST_DIR` | `../frontend/dist` | The built pages (the Docker image sets `/app/public`). |
 | `PORT` / `BIND` | `4567` / `0.0.0.0` | Where to listen. |
 

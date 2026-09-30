@@ -58,6 +58,7 @@ class PagesTest < Minitest::Test
   end
 
   def test_no_hsts_in_local_development
+    @overrides = { "ENVIRONMENT" => "development" }
     get "/"
     assert_nil last_response.headers["strict-transport-security"]
   end
@@ -66,6 +67,10 @@ class PagesTest < Minitest::Test
     @overrides = { "ENVIRONMENT" => "beta" }
     get "/"
     assert_includes last_response.headers["strict-transport-security"], "max-age="
+  end
+
+  def test_environment_defaults_to_production
+    refute NightcordWeb::Settings.from_env({}).development?
   end
 
   def test_public_host_is_allowed_for_websockets_and_in_the_csp

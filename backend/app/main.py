@@ -1,7 +1,7 @@
 import sentry_sdk
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import _rate_limit_exceeded_handler
+from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
@@ -16,10 +16,27 @@ if settings.sentry_dsn:
         send_default_pii=False,
     )
 
-app = FastAPI(title="nightcord")
+
+def api_docs_settings(environment: str) -> dict:
+    """/docs, /redoc and /openapi.json map out every endpoint -- handy
+    locally, no reason to publish. Only a local dev machine gets them.
+    """
+    if environment == "development":
+        return {}
+    return {"docs_url": None, "redoc_url": None, "openapi_url": None}
+
+
+app = FastAPI(title="nightcord", **api_docs_settings(settings.environment))
 
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    # `detail`, like every other error, so the frontend shows this message.
+    return JSONResponse(status_code=429, content={"detail": "Too many requests. Please wait a bit and try again."})
+
+
 app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(

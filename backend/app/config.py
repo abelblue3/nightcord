@@ -10,7 +10,9 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     campus_time_api_url: str = "https://campus-time.replit.app"
     sentry_dsn: str = ""
-    environment: str = "development"
+    # Secure by default: a deploy that forgets to set ENVIRONMENT must not get
+    # the dev-only gate bypass, relaxed cookies, or public API docs.
+    environment: str = "production"
     canary_bypass_token: str = ""
     login_max_failed_attempts: int = 5
     login_lockout_minutes: int = 15

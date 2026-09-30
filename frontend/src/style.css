@@ -352,6 +352,14 @@ a {
   flex: 1;
 }
 
+.load-earlier {
+  align-self: center;
+}
+
+.load-earlier[hidden] {
+  display: none;
+}
+
 .chat-log {
   flex: 1;
   min-height: 360px;

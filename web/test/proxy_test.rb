@@ -92,9 +92,18 @@ class ProxyTest < Minitest::Test
   end
 
   def test_a_client_cannot_spoof_its_ip_by_sending_x_forwarded_for_itself
+    stub_request(:get, "http://backend.test/rooms").with(headers: { "X-Forwarded-For" => "203.0.113.9" })
+
+    # The client typed 1.2.3.4; Railway's edge appended the real address.
+    get "/api/rooms", {}, "REMOTE_ADDR" => "100.64.0.3", "HTTP_X_FORWARDED_FOR" => "1.2.3.4, 203.0.113.9"
+
+    assert_equal 200, last_response.status
+  end
+
+  def test_uses_the_socket_address_when_no_proxy_is_involved
     stub_request(:get, "http://backend.test/rooms").with(headers: { "X-Forwarded-For" => "198.51.100.7" })
 
-    get "/api/rooms", {}, "REMOTE_ADDR" => "198.51.100.7", "HTTP_X_FORWARDED_FOR" => "1.2.3.4"
+    get "/api/rooms", {}, "REMOTE_ADDR" => "198.51.100.7"
 
     assert_equal 200, last_response.status
   end

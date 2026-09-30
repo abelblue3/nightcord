@@ -34,7 +34,7 @@ class SocketRelayTest < Minitest::Test
         else
           # First tell the test what arrived, then echo until the relay closes.
           connection.write(Protocol::WebSocket::TextMessage.generate(
-            cookie: env["HTTP_COOKIE"], origin: env["HTTP_ORIGIN"],
+            cookie: env["HTTP_COOKIE"], origin: env["HTTP_ORIGIN"], canary_token: env["HTTP_X_CANARY_TOKEN"],
             forwarded_for: env["HTTP_X_FORWARDED_FOR"], path: env["PATH_INFO"], query: env["QUERY_STRING"],
           ))
           connection.flush
@@ -84,10 +84,14 @@ class SocketRelayTest < Minitest::Test
 
   def test_relays_messages_both_ways_and_forwards_the_session_cookie
     with_servers do |base|
-      socket = connect("#{base}/api/ws/rooms/1?skip_gate=1", [["cookie", "access_token=abc"], ["origin", ALLOWED_ORIGIN]])
+      socket = connect(
+        "#{base}/api/ws/rooms/1?skip_gate=1",
+        [["cookie", "access_token=abc"], ["origin", ALLOWED_ORIGIN], ["x-canary-token", "tok"]],
+      )
 
       arrived = socket.read.parse
       assert_equal "access_token=abc", arrived[:cookie]
+      assert_equal "tok", arrived[:canary_token]
       assert_equal "/ws/rooms/1", arrived[:path]
       assert_equal "skip_gate=1", arrived[:query]
       assert_equal "127.0.0.1", arrived[:forwarded_for]

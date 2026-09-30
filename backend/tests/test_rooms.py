@@ -46,3 +46,67 @@ def test_room_messages_empty_initially(client, logged_in_room_user):
 def test_room_messages_404_for_missing_room(client, logged_in_room_user):
     res = client.get("/rooms/999999/messages")
     assert res.status_code == 404
+
+
+# --- rate limits ---
+
+
+def _signup(client, email):
+    client.post("/auth/signup", json={"email": email, "password": "correct-horse-battery", "display_name": email})
+
+
+def test_room_creation_is_limited_per_account(client):
+    _signup(client, "maker@university.edu")
+    statuses = [client.post("/rooms", json={"name": f"room-{n}"}).status_code for n in range(11)]
+    assert statuses[:10] == [201] * 10
+    assert statuses[10] == 429
+    assert client.post("/rooms", json={"name": "one-more"}).json()["detail"].startswith("Too many requests")
+
+    # A different student on the same network (same IP here) has their own allowance.
+    _signup(client, "other.maker@university.edu")
+    assert client.post("/rooms", json={"name": "someone-elses-room"}).status_code == 201
+
+
+# --- message history pages ---
+
+
+def _seed_messages(db_session, room_id, count):
+    from app.models import Message, User
+
+    author = db_session.query(User).filter(User.email == "roomuser@university.edu").first()
+    for n in range(count):
+        db_session.add(Message(room_id=room_id, user_id=author.id, content=f"msg {n}"))
+    db_session.commit()
+
+
+def test_history_returns_the_latest_page_oldest_first(client, db_session, logged_in_room_user):
+    room = client.post("/rooms", json={"name": "busy-room"}).json()
+    _seed_messages(db_session, room["id"], 120)
+
+    page = client.get(f"/rooms/{room['id']}/messages").json()
+
+    assert len(page) == 50
+    assert [m["content"] for m in page] == [f"msg {n}" for n in range(70, 120)]
+
+
+def test_history_pages_backwards_with_before(client, db_session, logged_in_room_user):
+    room = client.post("/rooms", json={"name": "paging-room"}).json()
+    _seed_messages(db_session, room["id"], 120)
+
+    contents = []
+    before = None
+    while True:
+        params = {"before": before} if before else {}
+        page = client.get(f"/rooms/{room['id']}/messages", params=params).json()
+        contents = [m["content"] for m in page] + contents
+        if len(page) < 50:
+            break
+        before = page[0]["id"]
+
+    assert contents == [f"msg {n}" for n in range(120)]
+
+
+def test_history_page_size_is_capped(client, logged_in_room_user):
+    room = client.post("/rooms", json={"name": "cap-room"}).json()
+    assert client.get(f"/rooms/{room['id']}/messages", params={"limit": 100}).status_code == 200
+    assert client.get(f"/rooms/{room['id']}/messages", params={"limit": 101}).status_code == 422

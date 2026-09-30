@@ -24,7 +24,8 @@ module NightcordWeb
         dist_dir: env.fetch("DIST_DIR", File.expand_path("../../frontend/dist", __dir__)),
         allowed_origins: origins.reject(&:empty?).uniq,
         public_host: public_host,
-        environment: env.fetch("ENVIRONMENT", "development"),
+        # Secure by default: a deploy that forgets ENVIRONMENT still gets HSTS.
+        environment: env.fetch("ENVIRONMENT", "production"),
       )
     end
 

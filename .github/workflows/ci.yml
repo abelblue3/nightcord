@@ -152,7 +152,7 @@ jobs:
 
       - name: Start FastAPI
         working-directory: backend
-        run: uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips='*' > "$RUNNER_TEMP/backend.log" 2>&1 &
+        run: uvicorn app.main:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/backend.log" 2>&1 &
 
       - name: Start the web layer
         working-directory: web
