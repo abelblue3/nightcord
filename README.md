@@ -142,6 +142,13 @@ the gate itself never calls it. If campus-time has no timezone for the school
 (unknown, held back, a chain spanning timezones, or unreachable), signup
 falls back to the browser's timezone, then UTC.
 
+When the gate is closed, the 403 response includes the student's school
+timezone. That's deliberate: the frontend needs it for the "opens in"
+countdown, and it only ever goes to the signed-in student it belongs to.
+
+Chat also limits each connection to 5 messages per 5 seconds; extra messages
+are dropped, and a connection that keeps flooding is disconnected.
+
 campus-time can't yet search by email domain, so the domain → institution
 step uses the bundled `school_domains.json` above. Once it can, that file and
 its build script can go.

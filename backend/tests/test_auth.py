@@ -172,7 +172,7 @@ def test_cookie_flags_secure_on_beta_too(monkeypatch):
 def test_signup_success(client):
     res = client.post(
         "/auth/signup",
-        json={"email": "new.student@university.edu", "password": "password123", "display_name": "New Student"},
+        json={"email": "new.student@university.edu", "password": "correct-horse-battery", "display_name": "New Student"},
     )
     assert res.status_code == 201
     body = res.json()
@@ -182,16 +182,24 @@ def test_signup_success(client):
     assert "access_token" in res.cookies
 
 
+def test_signup_rejects_passwords_under_12_characters(client):
+    res = client.post(
+        "/auth/signup",
+        json={"email": "short.pw@university.edu", "password": "elevenchars", "display_name": "Short"},
+    )
+    assert res.status_code == 422
+
+
 def test_signup_rejects_non_edu_email(client):
     res = client.post(
         "/auth/signup",
-        json={"email": "random@gmail.com", "password": "password123", "display_name": "Rando"},
+        json={"email": "random@gmail.com", "password": "correct-horse-battery", "display_name": "Rando"},
     )
     assert res.status_code == 400
 
 
 def test_signup_rejects_duplicate_email(client):
-    payload = {"email": "dupe@university.edu", "password": "password123", "display_name": "Dupe"}
+    payload = {"email": "dupe@university.edu", "password": "correct-horse-battery", "display_name": "Dupe"}
     assert client.post("/auth/signup", json=payload).status_code == 201
     res = client.post("/auth/signup", json=payload)
     assert res.status_code == 409
@@ -229,13 +237,13 @@ def test_login_wrong_password(client):
 
 
 def test_login_nonexistent_user(client):
-    res = client.post("/auth/login", json={"email": "nobody@university.edu", "password": "password123"})
+    res = client.post("/auth/login", json={"email": "nobody@university.edu", "password": "correct-horse-battery"})
     assert res.status_code == 401
 
 
 def test_login_success(client):
     _signup(client, "loginok@university.edu")
-    res = client.post("/auth/login", json={"email": "loginok@university.edu", "password": "password123"})
+    res = client.post("/auth/login", json={"email": "loginok@university.edu", "password": "correct-horse-battery"})
     assert res.status_code == 200
     assert "access_token" in res.cookies
 
@@ -316,7 +324,7 @@ def test_lockout_after_max_failed_attempts(client, db_session):
         assert res.status_code == 401
 
     # Locked now -- even the correct password is rejected, with the same generic message.
-    res = client.post("/auth/login", json={"email": "lockout@university.edu", "password": "password123"})
+    res = client.post("/auth/login", json={"email": "lockout@university.edu", "password": "correct-horse-battery"})
     assert res.status_code == 401
     assert res.json()["detail"] == "Incorrect email or password."
 
@@ -334,7 +342,7 @@ def test_lockout_clears_after_window_expires(client, db_session):
     user.lockout_until = datetime.now(timezone.utc) - timedelta(minutes=1)
     db_session.commit()
 
-    res = client.post("/auth/login", json={"email": "lockout2@university.edu", "password": "password123"})
+    res = client.post("/auth/login", json={"email": "lockout2@university.edu", "password": "correct-horse-battery"})
     assert res.status_code == 200
 
 
@@ -343,7 +351,7 @@ def test_successful_login_resets_failed_attempt_counter(client, db_session):
     client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
     client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "wrong"})
 
-    res = client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "password123"})
+    res = client.post("/auth/login", json={"email": "resetcount@university.edu", "password": "correct-horse-battery"})
     assert res.status_code == 200
 
     user = db_session.query(User).filter(User.email == "resetcount@university.edu").first()
@@ -407,7 +415,7 @@ def test_logout_all_requires_csrf_header(client):
 
 # --- helpers ---
 
-def _signup(client, email, password="password123") -> None:
+def _signup(client, email, password="correct-horse-battery") -> None:
     res = client.post(
         "/auth/signup",
         json={"email": email, "password": password, "display_name": "Test User"},

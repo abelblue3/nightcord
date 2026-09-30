@@ -5,7 +5,7 @@ import pytest
 def logged_in_room_user(client):
     client.post(
         "/auth/signup",
-        json={"email": "roomuser@university.edu", "password": "password123", "display_name": "Room User"},
+        json={"email": "roomuser@university.edu", "password": "correct-horse-battery", "display_name": "Room User"},
     )
 
 

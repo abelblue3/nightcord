@@ -123,7 +123,7 @@ def test_canary_bypass_inactive_when_not_configured(monkeypatch):
 def test_signup_stores_institution_timezone(client, db_session):
     client.post(
         "/auth/signup",
-        json={"email": "student@harvard.edu", "password": "password123", "display_name": "H Student"},
+        json={"email": "student@harvard.edu", "password": "correct-horse-battery", "display_name": "H Student"},
     )
     user = db_session.query(User).filter(User.email == "student@harvard.edu").first()
     assert user.timezone == "America/New_York"
@@ -134,7 +134,7 @@ def test_signup_stores_client_fallback_timezone_for_unknown_school(client, db_se
         "/auth/signup",
         json={
             "email": "student@totally-unknown-school.edu",
-            "password": "password123",
+            "password": "correct-horse-battery",
             "display_name": "Unknown Student",
             "timezone": "America/Denver",
         },
@@ -165,7 +165,7 @@ def test_google_auth_stores_institution_timezone(client, db_session, monkeypatch
 def logged_in_gate_user(client):
     client.post(
         "/auth/signup",
-        json={"email": "gateuser@university.edu", "password": "password123", "display_name": "Gate User"},
+        json={"email": "gateuser@university.edu", "password": "correct-horse-battery", "display_name": "Gate User"},
     )
 
 
