@@ -3,19 +3,22 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     database_url: str
-    secret_key: str
-    access_token_expire_minutes: int = 1440
     allowed_email_domains: str = ".edu"
     cors_origins: str = "http://localhost:3000"
-    google_client_id: str = ""
+    # Clerk (sign-up, sign-in, email verification). The secret key calls
+    # Clerk's Backend API; the JWT key is the instance's public key (PEM, from
+    # Dashboard -> API keys), used to verify session tokens without a network
+    # call. A single-line value with literal "\n"s is accepted, since some
+    # hosts can't store multi-line variables.
+    clerk_secret_key: str = ""
+    clerk_jwt_key: str = ""
+    clerk_api_url: str = "https://api.clerk.com/v1"
     campus_time_api_url: str = "https://campus-time.replit.app"
     sentry_dsn: str = ""
     # Secure by default: a deploy that forgets to set ENVIRONMENT must not get
-    # the dev-only gate bypass, relaxed cookies, or public API docs.
+    # the dev-only gate bypass or public API docs.
     environment: str = "production"
     canary_bypass_token: str = ""
-    login_max_failed_attempts: int = 5
-    login_lockout_minutes: int = 15
 
     @property
     def allowed_email_domain_list(self) -> list[str]:
@@ -24,6 +27,10 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
+
+    @property
+    def clerk_jwt_public_key(self) -> str:
+        return self.clerk_jwt_key.replace("\\n", "\n").strip()
 
     class Config:
         env_file = ".env"

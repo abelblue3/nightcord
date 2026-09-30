@@ -25,7 +25,7 @@ jobs:
 
       - name: Run canary checks against production
         env:
-          CANARY_EMAIL: ${{ secrets.CANARY_EMAIL }}
-          CANARY_PASSWORD: ${{ secrets.CANARY_PASSWORD }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          CANARY_CLERK_USER_ID: ${{ secrets.CANARY_CLERK_USER_ID }}
           CANARY_BYPASS_TOKEN: ${{ secrets.CANARY_BYPASS_TOKEN }}
         run: node canary.mjs

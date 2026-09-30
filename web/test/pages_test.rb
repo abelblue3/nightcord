@@ -50,7 +50,11 @@ class PagesTest < Minitest::Test
   def test_pages_carry_the_security_headers
     get "/"
     csp = last_response.headers["content-security-policy"]
-    assert_includes csp, "connect-src 'self' https://accounts.google.com"
+    assert_includes csp, "connect-src 'self' https://*.clerk.accounts.dev https://*.protect.clerk.com:*"
+    assert_includes csp, "script-src 'self' https://*.clerk.accounts.dev https://challenges.cloudflare.com"
+    assert_includes csp, "img-src 'self' data: https://img.clerk.com"
+    assert_includes csp, "worker-src 'self' blob:"
+    refute_includes csp, "accounts.google.com", "Google sign-in now goes through Clerk"
     assert_includes csp, "frame-ancestors 'none'"
     refute_includes csp, "railway.app", "the API is same-origin now; no backend URL belongs in the CSP"
     assert_equal "nosniff", last_response.headers["x-content-type-options"]
@@ -71,6 +75,14 @@ class PagesTest < Minitest::Test
 
   def test_environment_defaults_to_production
     refute NightcordWeb::Settings.from_env({}).development?
+  end
+
+  def test_production_clerk_host_goes_in_the_csp
+    @overrides = { "CLERK_FRONTEND_API" => "clerk.nightcord.example" }
+    get "/"
+    csp = last_response.headers["content-security-policy"]
+    assert_includes csp, "script-src 'self' https://clerk.nightcord.example"
+    refute_includes csp, "clerk.accounts.dev"
   end
 
   def test_public_host_is_allowed_for_websockets_and_in_the_csp

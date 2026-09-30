@@ -1,15 +1,14 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket, logout } from './api.js';
+import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
-if (requireAuth()) {
-  init();
-}
-// else: requireAuth already redirected to /index.html
+init();
 
 async function init() {
+  if (!(await requireAuth())) return; // already redirecting to the sign-in page
+
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const params = new URLSearchParams(window.location.search);
@@ -23,16 +22,7 @@ async function init() {
 
   document.getElementById('room-title').textContent = roomName.toUpperCase();
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    try {
-      await logout();
-    } catch {
-      // Sign out locally either way -- a failed request shouldn't strand someone.
-    } finally {
-      clearSession();
-      window.location.href = '/index.html';
-    }
-  });
+  document.getElementById('logout-btn').addEventListener('click', signOut);
 
   const chatLog = document.getElementById('chat-log');
   const errorBox = document.getElementById('error-box');
@@ -135,8 +125,8 @@ async function init() {
 
   let socket;
 
-  function connect() {
-    socket = connectRoomSocket(roomId);
+  async function connect() {
+    socket = await connectRoomSocket(roomId);
 
     socket.addEventListener('open', () => setStatus('connected', 'connected'));
 
@@ -149,6 +139,11 @@ async function init() {
       const gateClosedMatch = /^gate-closed:(.+)$/.exec(event.reason || '');
       if (gateClosedMatch) {
         renderClosedScreen(document.querySelector('.screen'), gateClosedMatch[1]);
+        return;
+      }
+      if (event.reason === 'unauthorized') {
+        // The session ended (e.g. "log out of all devices" elsewhere).
+        signOut();
         return;
       }
       setStatus('disconnected', 'disconnected');
@@ -171,7 +166,7 @@ async function init() {
 
   const gateOpen = await loadHistory();
   if (gateOpen) {
-    connect();
+    await connect();
     if (currentUser?.timezone) {
       watchForClose(currentUser.timezone);
     }

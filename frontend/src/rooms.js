@@ -1,39 +1,28 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, clearSession, listRooms, createRoom, logout, logoutAllDevices } from './api.js';
+import { requireAuth, getUser, signOut, listRooms, createRoom, logoutAllDevices } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initThemeToggle } from './theme.js';
 
-if (requireAuth()) {
-  init();
-}
-// else: requireAuth already redirected to /index.html
+init();
 
 async function init() {
+  if (!(await requireAuth())) return; // already redirecting to the sign-in page
+
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const user = getUser();
   document.getElementById('user-tag').textContent = user?.display_name ? `hi, ${user.display_name}` : '';
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    try {
-      await logout();
-    } catch {
-      // Sign out locally either way -- a failed request shouldn't strand someone.
-    } finally {
-      clearSession();
-      window.location.href = '/index.html';
-    }
-  });
+  document.getElementById('logout-btn').addEventListener('click', signOut);
 
   document.getElementById('logout-all-btn').addEventListener('click', async () => {
     try {
       await logoutAllDevices();
     } catch {
-      // Sign out locally either way -- a failed request shouldn't strand someone.
+      // Sign this browser out either way -- a failed request shouldn't strand someone.
     } finally {
-      clearSession();
-      window.location.href = '/index.html';
+      await signOut();
     }
   });
 

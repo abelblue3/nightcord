@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session, joinedload
 
-from app.auth import require_csrf_header
 from app.database import get_db
 from app.gate import require_night_access
 from app.models import Message, Room, User
@@ -20,7 +19,7 @@ def list_rooms(request: Request, db: Session = Depends(get_db), _: User = Depend
     return db.query(Room).order_by(Room.created_at.desc()).all()
 
 
-@router.post("", response_model=RoomOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_csrf_header)])
+@router.post("", response_model=RoomOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("10/hour", key_func=user_or_ip_key)
 def create_room(
     request: Request,

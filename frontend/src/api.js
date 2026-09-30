@@ -1,9 +1,10 @@
-import { devSkipGateActive } from './nightGate.js';
+import { devSkipGateActive, getBrowserTimezone } from './nightGate.js';
+import { getSessionToken, loadClerk, signOutOfClerk } from './clerk.js';
 
 // Same-origin by default: the Ruby web layer (web/) serves these pages and
-// carries /api -- HTTP and WebSocket -- through to the backend, so the
-// session cookie is first-party. VITE_API_URL / VITE_WS_URL only need setting
-// to talk to a backend on a different host directly.
+// carries /api -- HTTP and WebSocket -- through to the backend.
+// VITE_API_URL / VITE_WS_URL only need setting to talk to a backend on a
+// different host directly.
 function apiBaseUrl() {
   return import.meta.env.VITE_API_URL || '/api';
 }
@@ -16,11 +17,9 @@ function wsBaseUrl() {
 
 const USER_KEY = 'nightcord_user';
 
-// The session token itself lives in an httpOnly cookie the backend sets --
-// this JS never sees it. What's cached here is only what the pages render
-// (id, name, school timezone), so the UI has something to show immediately;
-// the cookie (checked server-side on every request) is the actual source of
-// truth. The email is deliberately left out: nothing displays it, and
+// Clerk holds the actual session. What's cached here is only what the pages
+// render (id, name, school timezone), so the UI has something to show
+// immediately. The email is deliberately left out: nothing displays it, and
 // anything in localStorage is readable by any script on the page.
 export function saveSession({ id, display_name, timezone }) {
   localStorage.setItem(USER_KEY, JSON.stringify({ id, display_name, timezone }));
@@ -35,14 +34,26 @@ export function clearSession() {
   localStorage.removeItem(USER_KEY);
 }
 
-// Optimistic only: a cached user doesn't prove the cookie is still valid
-// (it may have expired, or been revoked by "log out of all devices" on
-// another tab). The real check happens on the first authenticated request;
-// request() below redirects here on a 401 either way.
-export function requireAuth() {
-  if (!getUser()) {
+// Sends someone back to the sign-in page, signed out of Clerk in this browser.
+export async function signOut() {
+  clearSession();
+  try {
+    await signOutOfClerk();
+  } catch {
+    // Leave either way -- a failed sign-out call shouldn't strand anyone.
+  } finally {
     window.location.href = '/index.html';
-    return null;
+  }
+}
+
+// For the signed-in pages: true if Clerk has a session here, otherwise
+// redirects to the sign-in page.
+export async function requireAuth() {
+  const clerk = await loadClerk();
+  if (!clerk.user) {
+    clearSession();
+    window.location.href = '/index.html';
+    return false;
   }
   return true;
 }
@@ -58,26 +69,34 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, auth = false } = {}) {
-  const headers = { 'Content-Type': 'application/json', 'X-Requested-With': 'nightcord' };
+async function request(path, { method = 'GET', body, auth = false, retried = false } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  // Clerk session tokens live about a minute; getSessionToken() refreshes
+  // as needed, so every request asks for one.
+  const token = await getSessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (auth && devSkipGateActive()) headers['X-Dev-Skip-Gate'] = '1';
 
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     method,
     headers,
-    credentials: 'include', // send/receive the httpOnly session cookie, even when VITE_API_URL points at another host
     body: body ? JSON.stringify(body) : undefined,
   });
 
   const data = await res.json().catch(() => ({}));
 
   if (!res.ok) {
-    if (auth && res.status === 401) {
-      // Cookie missing/expired/revoked -- the cached user object is stale.
-      clearSession();
-      window.location.href = '/index.html';
-    }
     const detail = data.detail;
+    if (auth && res.status === 401) {
+      if (detail?.code === 'not-linked' && !retried) {
+        // Signed in with Clerk but the nightcord account isn't linked yet
+        // (e.g. a sign-in that skipped the index page). Link it, then retry.
+        await startSession(getBrowserTimezone());
+        return request(path, { method, body, auth, retried: true });
+      }
+      // Session expired or revoked ("log out of all devices" elsewhere).
+      await signOut();
+    }
     const message = typeof detail === 'string' ? detail : detail?.message || 'Something went wrong.';
     throw new ApiError(message, res.status, detail);
   }
@@ -85,22 +104,12 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
   return data;
 }
 
-export async function signup({ email, password, displayName, timezone }) {
-  return request('/auth/signup', {
-    method: 'POST',
-    body: { email, password, display_name: displayName, timezone },
-  });
-}
-
-export async function login({ email, password }) {
-  return request('/auth/login', {
-    method: 'POST',
-    body: { email, password },
-  });
-}
-
-export async function logout() {
-  return request('/auth/logout', { method: 'POST' });
+// Links this Clerk sign-in to a nightcord account (creating one on first
+// sign-in) and caches what the pages render.
+export async function startSession(timezone) {
+  const user = await request('/auth/session', { method: 'POST', body: { timezone } });
+  saveSession(user);
+  return user;
 }
 
 export async function logoutAllDevices() {
@@ -121,15 +130,19 @@ export async function getRoomMessages(roomId, { before } = {}) {
   return request(`/rooms/${roomId}/messages${query}`, { auth: true });
 }
 
-export async function googleAuth(credential, timezone) {
-  return request('/auth/google', { method: 'POST', body: { credential, timezone } });
-}
-
-export function connectRoomSocket(roomId) {
+// Browsers can't put an Authorization header on a WebSocket, so the session
+// token goes in the first message instead (never the URL, which ends up in
+// logs). The token is fetched before connecting and sent from the first
+// 'open' listener, so it always goes out before anything the page sends.
+export async function connectRoomSocket(roomId) {
+  const token = await getSessionToken();
   const params = new URLSearchParams();
   if (devSkipGateActive()) params.set('skip_gate', '1');
   const query = params.toString();
-  // The session cookie rides along on the WebSocket handshake automatically
-  // (it's a normal HTTP request under the hood) -- no token in the URL.
-  return new WebSocket(`${wsBaseUrl()}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
+
+  const socket = new WebSocket(`${wsBaseUrl()}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
+  socket.addEventListener('open', () => {
+    socket.send(JSON.stringify({ type: 'auth', token }));
+  });
+  return socket;
 }

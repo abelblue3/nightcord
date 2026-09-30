@@ -5,8 +5,8 @@ class ConnectionManager:
     def __init__(self) -> None:
         self.active_connections: dict[int, list[WebSocket]] = {}
 
-    async def connect(self, room_id: int, websocket: WebSocket) -> None:
-        await websocket.accept()
+    def connect(self, room_id: int, websocket: WebSocket) -> None:
+        """Adds an already-accepted socket to the room's broadcast list."""
         self.active_connections.setdefault(room_id, []).append(websocket)
 
     def disconnect(self, room_id: int, websocket: WebSocket) -> None:

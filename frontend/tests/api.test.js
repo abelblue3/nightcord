@@ -1,31 +1,66 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+
+// Clerk is replaced with a small fake: whether someone is signed in, and the
+// session token getSessionToken() hands out.
+const clerkState = vi.hoisted(() => ({ user: { id: 'user_1' }, token: 'clerk-token-1' }));
+
+vi.mock('../src/clerk.js', () => ({
+  loadClerk: vi.fn(async () => ({ user: clerkState.user })),
+  getSessionToken: vi.fn(async () => clerkState.token),
+  signOutOfClerk: vi.fn(async () => {}),
+}));
+
+import { signOutOfClerk } from '../src/clerk.js';
 import {
   saveSession,
   getUser,
   clearSession,
   requireAuth,
-  signup,
-  login,
-  logout,
+  signOut,
+  startSession,
   logoutAllDevices,
   listRooms,
   createRoom,
   connectRoomSocket,
-  googleAuth,
   getRoomMessages,
 } from '../src/api.js';
 
+function jsonResponse(status, body) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
 function mockFetchOnce(status, body) {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: status >= 200 && status < 300,
-    status,
-    json: async () => body,
-  });
+  global.fetch = vi.fn().mockResolvedValue(jsonResponse(status, body));
+}
+
+function mockFetchSequence(...responses) {
+  global.fetch = vi.fn();
+  for (const [status, body] of responses) global.fetch.mockResolvedValueOnce(jsonResponse(status, body));
+}
+
+let originalLocation;
+
+function captureRedirects() {
+  originalLocation = window.location;
+  delete window.location;
+  window.location = { href: '', search: '', protocol: 'http:', host: 'localhost:5173' };
+}
+
+function restoreLocation() {
+  if (originalLocation) window.location = originalLocation;
+  originalLocation = undefined;
 }
 
 beforeEach(() => {
   localStorage.clear();
-  vi.restoreAllMocks();
+  vi.clearAllMocks();
+  clerkState.user = { id: 'user_1' };
+  clerkState.token = 'clerk-token-1';
+});
+
+afterEach(() => {
+  restoreLocation();
+  vi.unstubAllEnvs();
 });
 
 describe('session storage', () => {
@@ -52,154 +87,147 @@ describe('session storage', () => {
 });
 
 describe('requireAuth', () => {
-  // The session token itself lives in an httpOnly cookie this code can't
-  // read -- requireAuth only checks for a cached user as a fast, optimistic
-  // UX gate. The real check happens server-side on the first request.
-
-  it('returns true when a cached user exists', () => {
-    saveSession({ id: 1 });
-    expect(requireAuth()).toBe(true);
+  it('returns true when Clerk has a signed-in user', async () => {
+    expect(await requireAuth()).toBe(true);
   });
 
-  it('redirects to /index.html and returns null when there is no cached user', () => {
-    const originalLocation = window.location;
-    delete window.location;
-    window.location = { href: '' };
+  it('redirects to the sign-in page when nobody is signed in', async () => {
+    clerkState.user = null;
+    saveSession({ id: 1 });
+    captureRedirects();
 
-    const result = requireAuth();
-
-    expect(result).toBeNull();
+    expect(await requireAuth()).toBe(false);
     expect(window.location.href).toBe('/index.html');
-
-    window.location = originalLocation;
+    expect(getUser()).toBeNull();
   });
 });
 
-describe('request wrapper (via signup/login)', () => {
-  it('signup posts the right shape and returns the parsed body', async () => {
-    mockFetchOnce(201, { id: 1, email: 'a@university.edu' });
-
-    const result = await signup({ email: 'a@university.edu', password: 'password123', displayName: 'A' });
-
-    expect(result).toEqual({ id: 1, email: 'a@university.edu' });
-    const [url, options] = global.fetch.mock.calls[0];
-    expect(url).toContain('/auth/signup');
-    expect(JSON.parse(options.body)).toEqual({
-      email: 'a@university.edu',
-      password: 'password123',
-      display_name: 'A',
-    });
-  });
-
-  it('throws with the server-provided detail message on failure', async () => {
-    mockFetchOnce(400, { detail: 'Signup requires a valid college student email address.' });
-
-    await expect(login({ email: 'a@gmail.com', password: 'x' })).rejects.toThrow(
-      'Signup requires a valid college student email address.'
-    );
-  });
-
-  it('falls back to a generic message when the server gives no detail', async () => {
-    mockFetchOnce(500, {});
-    await expect(login({ email: 'a@university.edu', password: 'x' })).rejects.toThrow('Something went wrong.');
-  });
-
-  it('every request sends credentials so the httpOnly session cookie is included', async () => {
-    mockFetchOnce(200, []);
-    await listRooms();
-    const [, options] = global.fetch.mock.calls[0];
-    expect(options.credentials).toBe('include');
-  });
-
-  it('every request sends the CSRF header', async () => {
-    mockFetchOnce(200, []);
-    await listRooms();
-    const [, options] = global.fetch.mock.calls[0];
-    expect(options.headers['X-Requested-With']).toBe('nightcord');
-  });
-
-  it('no request ever attaches an Authorization header -- there is no client-readable token', async () => {
+describe('signOut', () => {
+  it('signs out of Clerk, clears the cache and goes to the sign-in page', async () => {
     saveSession({ id: 1 });
+    captureRedirects();
+
+    await signOut();
+
+    expect(signOutOfClerk).toHaveBeenCalled();
+    expect(getUser()).toBeNull();
+    expect(window.location.href).toBe('/index.html');
+  });
+
+  it('still leaves if Clerk sign-out fails', async () => {
+    signOutOfClerk.mockRejectedValueOnce(new Error('network error'));
+    captureRedirects();
+
+    await signOut();
+
+    expect(window.location.href).toBe('/index.html');
+  });
+});
+
+describe('request wrapper', () => {
+  it('sends the Clerk session token as a Bearer header', async () => {
     mockFetchOnce(200, []);
     await listRooms();
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
+  });
+
+  it('sends no cookie credentials and no CSRF header -- there is no cookie session anymore', async () => {
+    mockFetchOnce(200, []);
+    await listRooms();
+
+    const [, options] = global.fetch.mock.calls[0];
+    expect(options.credentials).toBeUndefined();
+    expect(options.headers['X-Requested-With']).toBeUndefined();
+  });
+
+  it('omits Authorization when signed out', async () => {
+    clerkState.token = null;
+    mockFetchOnce(200, {});
+    await startSession(null).catch(() => {});
+
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers.Authorization).toBeUndefined();
   });
 
+  it('throws with the server-provided detail message on failure', async () => {
+    mockFetchOnce(409, { detail: 'Room name already taken.' });
+    await expect(createRoom('dup')).rejects.toThrow('Room name already taken.');
+  });
+
+  it('falls back to a generic message when the server gives no detail', async () => {
+    mockFetchOnce(500, {});
+    await expect(createRoom('x')).rejects.toThrow('Something went wrong.');
+  });
+
   it('createRoom sends the room name in the body', async () => {
-    mockFetchOnce(201, { id: 5, name: 'late-night-calc' });
-
-    await createRoom('late-night-calc');
-
-    const [, options] = global.fetch.mock.calls[0];
-    expect(JSON.parse(options.body)).toEqual({ name: 'late-night-calc' });
-  });
-
-  it('signup includes the browser timezone when given one', async () => {
-    mockFetchOnce(201, { id: 1, email: 'a@university.edu' });
-
-    await signup({ email: 'a@university.edu', password: 'password123', displayName: 'A', timezone: 'America/Denver' });
-
-    const [, options] = global.fetch.mock.calls[0];
-    expect(JSON.parse(options.body).timezone).toBe('America/Denver');
-  });
-
-  it('googleAuth sends the credential and timezone', async () => {
-    mockFetchOnce(200, { id: 1 });
-
-    await googleAuth('fake-credential', 'America/Chicago');
+    mockFetchOnce(201, { id: 1, name: 'calc' });
+    await createRoom('calc');
 
     const [url, options] = global.fetch.mock.calls[0];
-    expect(url).toContain('/auth/google');
-    expect(JSON.parse(options.body)).toEqual({ credential: 'fake-credential', timezone: 'America/Chicago' });
-  });
-
-  it('logout posts to /auth/logout', async () => {
-    mockFetchOnce(200, { message: 'Logged out.' });
-    await logout();
-    const [url, options] = global.fetch.mock.calls[0];
-    expect(url).toContain('/auth/logout');
-    expect(options.method).toBe('POST');
+    expect(url).toContain('/rooms');
+    expect(JSON.parse(options.body)).toEqual({ name: 'calc' });
   });
 
   it('logoutAllDevices posts to /auth/logout-all', async () => {
-    mockFetchOnce(200, { message: 'Logged out of all devices.' });
+    mockFetchOnce(200, { message: 'Signed out of all devices.' });
     await logoutAllDevices();
+
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/auth/logout-all');
     expect(options.method).toBe('POST');
   });
 });
 
-describe('401 on an authenticated request', () => {
-  it('clears the cached user and redirects, since the cookie is expired/revoked', async () => {
-    const originalLocation = window.location;
-    delete window.location;
-    window.location = { href: '' };
+describe('startSession', () => {
+  it('posts the browser timezone and caches the account (without the email)', async () => {
+    mockFetchOnce(200, { id: 7, email: 'a@university.edu', display_name: 'A', timezone: 'America/Denver' });
 
-    saveSession({ id: 1, display_name: 'Jane' });
+    const user = await startSession('America/Denver');
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/auth/session');
+    expect(JSON.parse(options.body)).toEqual({ timezone: 'America/Denver' });
+    expect(user.id).toBe(7);
+    expect(getUser()).toEqual({ id: 7, display_name: 'A', timezone: 'America/Denver' });
+  });
+
+  it('a refusal (e.g. not a .edu address) is thrown, not redirected', async () => {
+    captureRedirects();
+    mockFetchOnce(403, { detail: 'Only college student (.edu) emails can join nightcord.' });
+
+    await expect(startSession(null)).rejects.toThrow('.edu');
+    expect(window.location.href).toBe('');
+  });
+});
+
+describe('401 on an authenticated request', () => {
+  it('links the account and retries when the backend says it is not linked yet', async () => {
+    mockFetchSequence(
+      [401, { detail: { message: 'Finish signing in to nightcord.', code: 'not-linked' } }],
+      [200, { id: 3, display_name: 'C', timezone: 'UTC' }],
+      [200, [{ id: 1, name: 'calc' }]],
+    );
+
+    const rooms = await listRooms();
+
+    expect(rooms).toEqual([{ id: 1, name: 'calc' }]);
+    const paths = global.fetch.mock.calls.map(([url]) => url.replace(/^.*?(\/rooms|\/auth\/session)$/, '$1'));
+    expect(paths).toEqual(['/rooms', '/auth/session', '/rooms']);
+    expect(getUser()).toEqual({ id: 3, display_name: 'C', timezone: 'UTC' });
+  });
+
+  it('signs out when the session is no longer valid', async () => {
+    saveSession({ id: 1 });
+    captureRedirects();
     mockFetchOnce(401, { detail: 'Could not validate credentials' });
 
     await expect(listRooms()).rejects.toThrow();
 
+    expect(signOutOfClerk).toHaveBeenCalled();
     expect(getUser()).toBeNull();
     expect(window.location.href).toBe('/index.html');
-
-    window.location = originalLocation;
-  });
-
-  it('does not redirect on a 401 from a non-authenticated call like login', async () => {
-    const originalLocation = window.location;
-    delete window.location;
-    window.location = { href: '' };
-
-    mockFetchOnce(401, { detail: 'Incorrect email or password.' });
-
-    await expect(login({ email: 'a@university.edu', password: 'wrong' })).rejects.toThrow();
-
-    expect(window.location.href).toBe('');
-
-    window.location = originalLocation;
   });
 });
 
@@ -213,15 +241,6 @@ describe('night-gate error data', () => {
       data: { message: 'nightcord is closed right now for your school.', timezone: 'America/New_York' },
     });
   });
-
-  it('a plain-string detail still works as before (no .data.timezone)', async () => {
-    mockFetchOnce(401, { detail: 'Incorrect email or password.' });
-
-    await expect(login({ email: 'a@university.edu', password: 'wrong' })).rejects.toMatchObject({
-      message: 'Incorrect email or password.',
-      data: 'Incorrect email or password.',
-    });
-  });
 });
 
 describe('dev gate bypass header', () => {
@@ -230,7 +249,6 @@ describe('dev gate bypass header', () => {
   });
 
   it('attaches X-Dev-Skip-Gate to authenticated requests when the bypass is on', async () => {
-    saveSession({ id: 1 });
     window.history.replaceState({}, '', '/?skipGate=1');
     mockFetchOnce(200, []);
 
@@ -241,93 +259,13 @@ describe('dev gate bypass header', () => {
   });
 
   it('omits the header when the bypass is off', async () => {
+    localStorage.clear();
     mockFetchOnce(200, []);
 
     await listRooms();
 
     const [, options] = global.fetch.mock.calls[0];
     expect(options.headers['X-Dev-Skip-Gate']).toBeUndefined();
-  });
-});
-
-describe('connectRoomSocket', () => {
-  beforeEach(() => {
-    window.history.replaceState({}, '', '/');
-  });
-
-  it('builds a ws URL with just the room id -- the session cookie rides along automatically', () => {
-    let capturedUrl;
-    global.WebSocket = class {
-      constructor(url) {
-        capturedUrl = url;
-      }
-    };
-
-    connectRoomSocket(42);
-
-    expect(capturedUrl).toContain('/ws/rooms/42');
-    expect(capturedUrl).not.toContain('token=');
-    expect(capturedUrl).not.toContain('skip_gate');
-  });
-
-  it('includes skip_gate=1 when the dev bypass is on', () => {
-    window.history.replaceState({}, '', '/?skipGate=1');
-
-    let capturedUrl;
-    global.WebSocket = class {
-      constructor(url) {
-        capturedUrl = url;
-      }
-    };
-
-    connectRoomSocket(42);
-
-    expect(capturedUrl).toContain('skip_gate=1');
-  });
-});
-
-describe('same-origin defaults (served through the Ruby web layer)', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs();
-  });
-
-  it('calls /api on the current site when VITE_API_URL is not set', async () => {
-    vi.stubEnv('VITE_API_URL', '');
-    mockFetchOnce(200, []);
-
-    await listRooms();
-
-    expect(global.fetch.mock.calls[0][0]).toBe('/api/rooms');
-  });
-
-  it('opens the chat socket on the current site when VITE_WS_URL is not set', () => {
-    vi.stubEnv('VITE_WS_URL', '');
-    window.history.replaceState({}, '', '/');
-    let capturedUrl;
-    global.WebSocket = class {
-      constructor(url) {
-        capturedUrl = url;
-      }
-    };
-
-    connectRoomSocket(42);
-
-    expect(capturedUrl).toBe(`ws://${window.location.host}/api/ws/rooms/42`);
-  });
-
-  it('still honors an explicit VITE_WS_URL', () => {
-    vi.stubEnv('VITE_WS_URL', 'wss://backend.example');
-    window.history.replaceState({}, '', '/');
-    let capturedUrl;
-    global.WebSocket = class {
-      constructor(url) {
-        capturedUrl = url;
-      }
-    };
-
-    connectRoomSocket(42);
-
-    expect(capturedUrl).toBe('wss://backend.example/ws/rooms/42');
   });
 });
 
@@ -342,5 +280,103 @@ describe('getRoomMessages', () => {
     mockFetchOnce(200, []);
     await getRoomMessages(7, { before: 123 });
     expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?before=123$/);
+  });
+});
+
+describe('connectRoomSocket', () => {
+  let sockets;
+
+  beforeEach(() => {
+    window.history.replaceState({}, '', '/');
+    localStorage.clear();
+    sockets = [];
+    global.WebSocket = class {
+      constructor(url) {
+        this.url = url;
+        this.sent = [];
+        this.listeners = {};
+        sockets.push(this);
+      }
+
+      addEventListener(type, fn) {
+        (this.listeners[type] ||= []).push(fn);
+      }
+
+      send(data) {
+        this.sent.push(data);
+      }
+
+      open() {
+        for (const fn of this.listeners.open || []) fn();
+      }
+    };
+  });
+
+  it('builds a ws URL with just the room id -- no token in the URL', async () => {
+    await connectRoomSocket(42);
+
+    expect(sockets[0].url).toContain('/ws/rooms/42');
+    expect(sockets[0].url).not.toContain('token');
+    expect(sockets[0].url).not.toContain('skip_gate');
+  });
+
+  it('sends the session token as the first message, before anything the page sends', async () => {
+    const socket = await connectRoomSocket(42);
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ content: 'hello' })));
+
+    socket.open();
+
+    expect(JSON.parse(socket.sent[0])).toEqual({ type: 'auth', token: 'clerk-token-1' });
+    expect(JSON.parse(socket.sent[1])).toEqual({ content: 'hello' });
+  });
+
+  it('includes skip_gate=1 when the dev bypass is on', async () => {
+    window.history.replaceState({}, '', '/?skipGate=1');
+    await connectRoomSocket(42);
+    expect(sockets[0].url).toContain('skip_gate=1');
+  });
+});
+
+describe('same-origin defaults (served through the Ruby web layer)', () => {
+  it('calls /api on the current site when VITE_API_URL is not set', async () => {
+    vi.stubEnv('VITE_API_URL', '');
+    mockFetchOnce(200, []);
+
+    await listRooms();
+
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/rooms');
+  });
+
+  it('opens the chat socket on the current site when VITE_WS_URL is not set', async () => {
+    vi.stubEnv('VITE_WS_URL', '');
+    window.history.replaceState({}, '', '/');
+    let capturedUrl;
+    global.WebSocket = class {
+      constructor(url) {
+        capturedUrl = url;
+      }
+
+      addEventListener() {}
+    };
+
+    await connectRoomSocket(42);
+
+    expect(capturedUrl).toBe(`ws://${window.location.host}/api/ws/rooms/42`);
+  });
+
+  it('still honors an explicit VITE_WS_URL', async () => {
+    vi.stubEnv('VITE_WS_URL', 'wss://backend.example');
+    let capturedUrl;
+    global.WebSocket = class {
+      constructor(url) {
+        capturedUrl = url;
+      }
+
+      addEventListener() {}
+    };
+
+    await connectRoomSocket(42);
+
+    expect(capturedUrl).toBe('wss://backend.example/ws/rooms/42');
   });
 });

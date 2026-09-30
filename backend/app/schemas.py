@@ -2,10 +2,9 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-class UserCreate(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=12)
-    display_name: str = Field(min_length=1, max_length=100)
+class SessionStart(BaseModel):
+    # The browser's timezone, used only if the student's school has none on
+    # record (see gate.resolve_signup_timezone).
     timezone: str | None = None
 
 class UserOut(BaseModel):
@@ -16,14 +15,6 @@ class UserOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
-
-class GoogleAuthRequest(BaseModel):
-    credential: str
-    timezone: str | None = None
 
 class MessageResponse(BaseModel):
     message: str

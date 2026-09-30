@@ -23,9 +23,9 @@ module NightcordWeb
       "OPTIONS" => Net::HTTP::Options,
     }.freeze
 
-    # Session cookie, the CSRF header, and the two gate-bypass headers
+    # The Clerk session token (Authorization), and the two gate-bypass headers
     # (dev-only and canary) FastAPI checks itself.
-    FORWARDED_REQUEST_HEADERS = %w[Content-Type Accept Cookie X-Requested-With X-Dev-Skip-Gate X-Canary-Token].freeze
+    FORWARDED_REQUEST_HEADERS = %w[Content-Type Accept Authorization X-Dev-Skip-Gate X-Canary-Token].freeze
     RETURNED_RESPONSE_HEADERS = %w[content-type set-cookie retry-after cache-control].freeze
 
     # Net::OpenTimeout and Net::ReadTimeout are Timeout::Errors; connection

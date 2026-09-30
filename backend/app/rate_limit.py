@@ -1,11 +1,9 @@
 import ipaddress
 
 from fastapi import Request
-from jose import JWTError, jwt
 from slowapi import Limiter
 
-from app.auth import ACCESS_TOKEN_COOKIE_NAME
-from app.config import settings
+from app import clerk_auth
 
 # Addresses our own hops use: Railway's edge proxy and private network (and
 # the Ruby web layer on it), plus loopback for local runs. A client's real
@@ -43,17 +41,15 @@ def client_ip(request: Request) -> str:
 
 def user_or_ip_key(request: Request) -> str:
     """For signed-in routes: one bucket per account, since a whole campus
-    can sit behind a single NAT address. Only a token with a valid signature
+    can sit behind a single NAT address. Only a token Clerk actually signed
     counts, so the key can't be forged; anything else falls back to the IP.
     """
-    token = request.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
-    if token:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token:
         try:
-            subject = jwt.decode(token, settings.secret_key, algorithms=["HS256"]).get("sub")
-        except JWTError:
-            subject = None
-        if subject:
-            return f"user:{subject}"
+            return f"user:{clerk_auth.verify_session_token(token)['sub']}"
+        except clerk_auth.InvalidSessionToken:
+            pass
     return client_ip(request)
 
 

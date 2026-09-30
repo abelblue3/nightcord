@@ -2,11 +2,8 @@ import pytest
 
 
 @pytest.fixture()
-def logged_in_room_user(client):
-    client.post(
-        "/auth/signup",
-        json={"email": "roomuser@university.edu", "password": "correct-horse-battery", "display_name": "Room User"},
-    )
+def logged_in_room_user(sign_in):
+    sign_in("roomuser@university.edu", first_name="Room User")
 
 
 def test_rooms_require_auth(client):
@@ -31,11 +28,6 @@ def test_create_room_rejects_duplicate_name(client, logged_in_room_user):
     assert res.status_code == 409
 
 
-def test_create_room_requires_csrf_header(client, logged_in_room_user):
-    res = client.post("/rooms", json={"name": "csrf-room"}, headers={"X-Requested-With": "not-nightcord"})
-    assert res.status_code == 403
-
-
 def test_room_messages_empty_initially(client, logged_in_room_user):
     room = client.post("/rooms", json={"name": "empty-room"}).json()
     res = client.get(f"/rooms/{room['id']}/messages")
@@ -51,19 +43,15 @@ def test_room_messages_404_for_missing_room(client, logged_in_room_user):
 # --- rate limits ---
 
 
-def _signup(client, email):
-    client.post("/auth/signup", json={"email": email, "password": "correct-horse-battery", "display_name": email})
-
-
-def test_room_creation_is_limited_per_account(client):
-    _signup(client, "maker@university.edu")
+def test_room_creation_is_limited_per_account(client, sign_in):
+    sign_in("maker@university.edu")
     statuses = [client.post("/rooms", json={"name": f"room-{n}"}).status_code for n in range(11)]
     assert statuses[:10] == [201] * 10
     assert statuses[10] == 429
     assert client.post("/rooms", json={"name": "one-more"}).json()["detail"].startswith("Too many requests")
 
     # A different student on the same network (same IP here) has their own allowance.
-    _signup(client, "other.maker@university.edu")
+    sign_in("other.maker@university.edu")
     assert client.post("/rooms", json={"name": "someone-elses-room"}).status_code == 201
 
 

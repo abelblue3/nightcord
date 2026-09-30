@@ -1,11 +1,13 @@
 """Idempotent maintenance script: creates (or confirms) the dedicated canary
 account + room used by the scheduled canary checks (.github/workflows/canary.yml).
 
-Bypasses the signup API entirely -- and therefore its .edu domain
-validation -- since this is a synthetic monitoring account, not a student's.
+The canary signs in through Clerk like everyone else, so its nightcord row
+is linked to a Clerk user created for it in the Clerk dashboard. It's written
+here directly instead of through POST /auth/session: that endpoint only
+admits .edu students, and this is a synthetic monitoring account.
 
 Usage:
-    DATABASE_URL=<target db> CANARY_EMAIL=... CANARY_PASSWORD=... \
+    DATABASE_URL=<target db> CANARY_CLERK_USER_ID=user_... [CANARY_EMAIL=...] \\
         python scripts/seed_canary.py
 """
 import os
@@ -16,12 +18,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.auth import hash_password
 from app.models import Room, User
 
 DATABASE_URL = os.environ["DATABASE_URL"]
+CANARY_CLERK_USER_ID = os.environ["CANARY_CLERK_USER_ID"]
 CANARY_EMAIL = os.environ.get("CANARY_EMAIL", "canary@nightcord.internal")
-CANARY_PASSWORD = os.environ["CANARY_PASSWORD"]
 CANARY_ROOM_NAME = "canary-room"
 
 engine = create_engine(DATABASE_URL)
@@ -30,13 +31,14 @@ db = Session()
 
 user = db.query(User).filter(User.email == CANARY_EMAIL).first()
 if user:
-    print(f"canary user already exists: id={user.id}")
+    if user.clerk_user_id != CANARY_CLERK_USER_ID:
+        user.clerk_user_id = CANARY_CLERK_USER_ID
+        db.commit()
+        print(f"linked canary user id={user.id} to Clerk user {CANARY_CLERK_USER_ID}")
+    else:
+        print(f"canary user already exists: id={user.id}")
 else:
-    user = User(
-        email=CANARY_EMAIL,
-        hashed_password=hash_password(CANARY_PASSWORD),
-        display_name="Canary",
-    )
+    user = User(email=CANARY_EMAIL, clerk_user_id=CANARY_CLERK_USER_ID, display_name="Canary")
     db.add(user)
     db.commit()
     db.refresh(user)

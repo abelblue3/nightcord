@@ -39,14 +39,7 @@ jobs:
         run: pytest -v
 
       - name: Audit dependencies
-        # PYSEC-2026-1325 (ecdsa): no fix version exists -- the maintainers
-        # have publicly declined to fix pure-Python timing side-channels by
-        # design, and recommend the `cryptography` package for anything
-        # sensitive. It's a transitive dependency of python-jose, but this
-        # app only ever uses HS256 (symmetric HMAC), never the vulnerable
-        # ECDSA code path, so it's ignored here rather than left unfixable
-        # and permanently blocking CI.
-        run: pip-audit -r requirements-dev.txt --ignore-vuln PYSEC-2026-1325
+        run: pip-audit -r requirements-dev.txt
 
   backend-integration:
     runs-on: ubuntu-latest
@@ -110,13 +103,23 @@ jobs:
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: sqlite:///${{ github.workspace }}/e2e.db
-      SECRET_KEY: e2e-secret
       ENVIRONMENT: development
-      CANARY_EMAIL: canary@nightcord.internal
-      CANARY_PASSWORD: e2e-canary-password
+      CANARY_CLERK_USER_ID: user_canary_ci
       CANARY_BYPASS_TOKEN: e2e-canary-token
     steps:
       - uses: actions/checkout@v4
+
+      # Stands in for the Clerk instance: FastAPI verifies tokens with the
+      # public half (CLERK_JWT_KEY), and the canary signs its own token with
+      # the private half. Throwaway, CI-only.
+      - name: Generate a test signing key
+        run: |
+          openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$RUNNER_TEMP/clerk-test.pem"
+          openssl pkey -in "$RUNNER_TEMP/clerk-test.pem" -pubout -out "$RUNNER_TEMP/clerk-test.pub.pem"
+          {
+            echo "CLERK_JWT_KEY<<PEM"; cat "$RUNNER_TEMP/clerk-test.pub.pem"; echo "PEM"
+            echo "CANARY_TEST_PRIVATE_KEY<<PEM"; cat "$RUNNER_TEMP/clerk-test.pem"; echo "PEM"
+          } >> "$GITHUB_ENV"
 
       - uses: actions/setup-python@v5
         with:

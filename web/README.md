@@ -9,32 +9,29 @@ the FastAPI backend. It:
 - logs one line per request (method, path, status, time — never query
   strings, bodies, or cookies).
 
-Everything is on one domain, so the session cookie is first-party. That's
-what makes login work in Safari, which blocks the cross-site cookie the old
-Vercel ↔ Railway setup relied on. There is no business logic here: auth, the
-night gate, and all data stay in FastAPI.
+Pages and API share one domain. There is no business logic here: sign-in
+(Clerk session tokens), the night gate, and all data stay in FastAPI.
 
 ## What passes through
 
 | Browser → web layer | → FastAPI | Request carries | Response carries |
 |---|---|---|---|
 | `GET /`, `/index.html`, `/rooms.html`, `/room.html`, `/assets/*` | — (served here) | — | HTML/JS/CSS + security headers |
-| `POST /api/auth/signup` | `/auth/signup` | `{email, password, display_name, timezone}` | `201 {id, email, display_name, timezone}` + `Set-Cookie`; 400/409/429 |
-| `POST /api/auth/login` | `/auth/login` | `{email, password}` | `{id, email, display_name, timezone}` + `Set-Cookie`; 401/429 |
-| `POST /api/auth/google` | `/auth/google` | `{credential, timezone}` | user object + `Set-Cookie`; 400/409/429 |
-| `POST /api/auth/logout` | `/auth/logout` | cookie | `{message}`, cookie cleared |
-| `POST /api/auth/logout-all` | `/auth/logout-all` | cookie + `X-Requested-With` | `{message}`, cookie cleared |
-| `GET /api/rooms` | `/rooms` | cookie | `[{id, name, created_by, created_at}]` or `403 {detail: {message, timezone}}` |
-| `POST /api/rooms` | `/rooms` | cookie + `X-Requested-With` + `{name}` | room object; 409 |
-| `GET /api/rooms/:id/messages` | `/rooms/:id/messages` | cookie | `[{id, room_id, user_id, display_name, content, created_at}]` |
-| `WS /api/ws/rooms/:id` | `/ws/rooms/:id` | cookie; client frames `{content}` | server frames `{id, room_id, user_id, display_name, content, created_at}`; FastAPI's close code and reason passed on unchanged |
+| `POST /api/auth/session` | `/auth/session` | token + `{timezone}` | `{id, email, display_name, timezone}`; 401/403 (not a verified student email)/429/502 |
+| `POST /api/auth/logout-all` | `/auth/logout-all` | token | `{message}` |
+| `GET /api/rooms` | `/rooms` | token | `[{id, name, created_by, created_at}]` or `403 {detail: {message, timezone}}` |
+| `POST /api/rooms` | `/rooms` | token + `{name}` | room object; 409/429 |
+| `GET /api/rooms/:id/messages?before=` | `/rooms/:id/messages` | token | up to 50 `[{id, room_id, user_id, display_name, content, created_at}]`, oldest first |
+| `WS /api/ws/rooms/:id` | `/ws/rooms/:id` | first frame `{type: "auth", token}`, then `{content}` frames | server frames `{id, room_id, user_id, display_name, content, created_at}`; FastAPI's close code and reason passed on unchanged |
 | `GET /api/health` | `/health` | — | `{status: "ok"}` |
 | `GET /healthz` | — (answered here) | — | `{status: "ok"}` |
 
-**Forwarded to FastAPI:** `Content-Type`, `Accept`, `Cookie`,
-`X-Requested-With`, `X-Dev-Skip-Gate`, `X-Canary-Token`, plus
-`X-Forwarded-For` set to the real client IP (FastAPI rate-limits per IP).
-Nothing else — in particular not `Origin` or `Authorization`.
+"token" above is `Authorization: Bearer <Clerk session token>`.
+
+**Forwarded to FastAPI:** `Content-Type`, `Accept`, `Authorization`,
+`X-Dev-Skip-Gate`, `X-Canary-Token`, plus `X-Forwarded-For` set to the real
+client IP (FastAPI rate-limits per IP). Nothing else — in particular not
+`Origin` or `Cookie`.
 
 **Returned to the browser:** status, body, `Content-Type`, every
 `Set-Cookie`, `Retry-After`, `Cache-Control`.
@@ -54,6 +51,7 @@ such as the canary) are allowed through to FastAPI's session check.
 | `PUBLIC_HOST` | — | This service's public hostname, e.g. `nightcord.up.railway.app`. Allowed as a WebSocket origin and added to the CSP. |
 | `ALLOWED_ORIGINS` | `http://localhost:4567,http://localhost:5173` | Extra origins allowed to open chat sockets (comma-separated). |
 | `ENVIRONMENT` | `production` | Set `development` locally; anything else turns on HSTS. |
+| `CLERK_FRONTEND_API` | `*.clerk.accounts.dev` | The Clerk instance's Frontend API host, allowed in the CSP. Set it to the production instance's host (e.g. `clerk.<your-domain>`) at go-live. |
 | `DIST_DIR` | `../frontend/dist` | The built pages (the Docker image sets `/app/public`). |
 | `PORT` / `BIND` | `4567` / `0.0.0.0` | Where to listen. |
 

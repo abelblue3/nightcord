@@ -4,13 +4,9 @@ sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
 pydantic[email]==2.9.2
 pydantic-settings==2.5.2
-python-jose[cryptography]==3.5.0
-passlib==1.7.4
-bcrypt==4.0.1
+PyJWT[crypto]==2.15.1
 python-dotenv==1.2.2
 alembic==1.13.3
-google-auth==2.35.0
-requests==2.34.2
 dnspython==2.6.1
 tzdata==2024.2
 sentry-sdk[fastapi]==2.67.1

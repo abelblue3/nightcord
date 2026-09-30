@@ -17,13 +17,13 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
-    google_id: Mapped[str] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    # Set the first time this person signs in through Clerk. The database still
+    # holds the pre-Clerk columns (hashed_password, google_id,
+    # failed_login_attempts, lockout_until, token_version) so a rollback stays
+    # possible; nothing reads them, and a later migration drops them.
+    clerk_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=True)
-    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    lockout_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="author")

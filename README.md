@@ -26,10 +26,13 @@ Browser ──> web/      Ruby (Sinatra on Falcon): serves the pages, carries /a
 ```
 
 - **`frontend/`** — the pages (vanilla JS + Vite), built into static files.
-- **`web/`** — the only thing the browser talks to. Everything is on one
-  domain, so the session cookie is first-party. No business logic. See
-  [web/README.md](web/README.md) for exactly what passes through it.
+- **`web/`** — the only thing the browser talks to, so pages and API share
+  one domain. No business logic. See [web/README.md](web/README.md) for
+  exactly what passes through it.
 - **`backend/`** — all the rules and data.
+- **[Clerk](https://clerk.com)** — accounts: sign-up, sign-in, the emailed
+  code that proves a student owns their address, Google sign-in, and
+  password resets. nightcord never stores a password.
 
 ## Backend
 
@@ -44,8 +47,7 @@ python -m venv .venv
 .venv\Scripts\activate      # Windows
 pip install -r requirements.txt
 copy .env.example .env      # DATABASE_URL already matches docker-compose.yml;
-                             # set your own SECRET_KEY, and GOOGLE_CLIENT_ID
-                             # if you need Google sign-in working
+                             # add your Clerk keys (see "Clerk setup")
 ```
 
 You need a PostgreSQL database matching `DATABASE_URL` to exist. Easiest way
@@ -76,7 +78,7 @@ uvicorn app.main:app --reload
 The API will be available at `http://localhost:8000` (docs at `/docs`).
 
 `ENVIRONMENT` defaults to `production` when unset, so a deploy that forgets it
-still gets secure cookies, HSTS, no dev gate bypass, and no public `/docs`.
+still gets HSTS, no dev gate bypass, and no public `/docs`.
 `.env.example` sets `development` for local work — keep that locally, and set
 `ENVIRONMENT=production` explicitly on Railway.
 
@@ -119,19 +121,46 @@ Beyond the `.edu` suffix check, signup validates the domain two more ways
    confirm it can actually receive mail. Fails closed: any lookup problem
    (nonexistent domain, no mail servers, timeout) rejects the signup.
 
+### Clerk setup
+
+nightcord uses a Clerk **development** instance until it has its own domain
+(Clerk production instances require one).
+
+1. In the [Clerk dashboard](https://dashboard.clerk.com), create an
+   application with **Email** (password + email verification code) and
+   **Google** sign-in.
+2. Settings worth turning on: minimum password length 12, reject compromised
+   passwords, block disposable email addresses and `+` subaddresses.
+3. From **API keys**, put the keys in the local `.env` files:
+   - `backend/.env`: `CLERK_SECRET_KEY` (Secret key) and `CLERK_JWT_KEY` (the
+     JWKS public key, PEM — written on one line with `\n` for line breaks)
+   - `frontend/.env`: `VITE_CLERK_PUBLISHABLE_KEY` (Publishable key)
+4. For the canary: create a user for it in the dashboard, run
+   `scripts/seed_canary.py` with `CANARY_CLERK_USER_ID=<its id>`, and add
+   `CLERK_SECRET_KEY` and `CANARY_CLERK_USER_ID` to the GitHub secrets.
+
+`.edu`-only access is enforced by nightcord itself (`POST /auth/session`),
+not Clerk's allowlist, which is a paid feature in production.
+
 ### Endpoints
 
-Sessions live in an httpOnly `access_token` cookie set by the auth
-endpoints — the frontend never sees the token itself.
+Signed-in requests carry `Authorization: Bearer <Clerk session token>`. The
+tokens are short-lived (about a minute; the frontend refreshes them), signed
+by Clerk, and verified here with the Clerk instance's public key — so there's
+no session cookie, and ordinary requests never call Clerk.
 
-- `POST /auth/signup` — create account (requires an allowed, real-institution student email domain; rejects breached passwords) and start a session
-- `POST /auth/login` — start a session (locks the account after repeated failures)
-- `POST /auth/google` — sign in/up via Google OAuth (`.edu`-restricted)
-- `POST /auth/logout` — end this browser's session
-- `POST /auth/logout-all` — end every session on every device
+- `POST /auth/session` — after each Clerk sign-in: checks the email is a
+  verified student address (and deletes the Clerk user if not), then links or
+  creates the nightcord account and returns it. An account that predates Clerk
+  is linked by its email, keeping its name, timezone and messages.
+- `POST /auth/logout-all` — ends every Clerk session for the account, on every
+  device (signing out of one browser happens in Clerk on the frontend)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
-- `WS /ws/rooms/{room_id}` — realtime chat over WebSocket (session cookie + night gate)
+- `WS /ws/rooms/{room_id}` — realtime chat over WebSocket. The first message must be
+  `{"type": "auth", "token": "<Clerk session token>"}` (browsers can't set
+  headers on WebSockets); refusals close with a reason such as `unauthorized`
+  or `gate-closed:<timezone>`
 - `GET /health` — health check
 
 ### Night gate
@@ -172,9 +201,9 @@ pytest
 ```
 
 Tests run against an isolated in-memory SQLite database (never the real
-Postgres database) and fake DNS lookups, the Have I Been Pwned check, and
-Google token verification, so the suite needs no external services or `.env`
-file. Set `TEST_DATABASE_URL` to run the same suite against real Postgres
+Postgres database), sign their own session tokens with a throwaway key, and
+fake Clerk's Backend API, DNS lookups and campus-time, so the suite needs no
+external services or `.env` file. Set `TEST_DATABASE_URL` to run the same suite against real Postgres
 (CI does both).
 
 ## Frontend

@@ -478,3 +478,46 @@ a {
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Clerk sign-in / sign-up (index.html) --- */
+/* Clerk's card and buttons reuse .panel and .btn (see appearance in clerk.js);
+   these rules give its inputs and small parts the same pixel style. The
+   .clerk-auth prefix outranks Clerk's own single-class styles. */
+
+.clerk-auth {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  justify-content: center;
+}
+
+.clerk-auth .cl-rootBox,
+.clerk-auth .cl-cardBox {
+  width: 100%;
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.clerk-auth .cl-formFieldInput {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  border: var(--border-w) solid var(--ink);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.clerk-auth .cl-formFieldInput:focus {
+  outline: 3px solid var(--primary);
+  outline-offset: 0;
+}
+
+.clerk-auth .cl-headerTitle {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.clerk-auth .cl-footer {
+  background: transparent;
+}
