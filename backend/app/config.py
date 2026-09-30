@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     allowed_email_domains: str = ".edu"
     cors_origins: str = "http://localhost:3000"
     google_client_id: str = ""
+    campus_time_api_url: str = "https://campus-time.replit.app"
     sentry_dsn: str = ""
     environment: str = "development"
     canary_bypass_token: str = ""

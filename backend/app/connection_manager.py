@@ -19,8 +19,15 @@ class ConnectionManager:
             self.active_connections.pop(room_id, None)
 
     async def broadcast(self, room_id: int, message: dict) -> None:
-        for connection in self.active_connections.get(room_id, []):
-            await connection.send_json(message)
+        # Iterate over a copy: a failed send removes that connection mid-loop.
+        for connection in list(self.active_connections.get(room_id, [])):
+            try:
+                await connection.send_json(message)
+            except Exception:
+                # A peer that went away before its own handler cleaned up
+                # must not take down the sender's connection -- drop it and
+                # keep delivering to everyone else in the room.
+                self.disconnect(room_id, connection)
 
 
 manager = ConnectionManager()

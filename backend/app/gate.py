@@ -9,18 +9,15 @@ section for the full reasoning.
 """
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
-
 from fastapi import Depends, Header, HTTPException, status
-
 from app.auth import get_current_user
 from app.config import settings
-from app.edu_domains import get_institution_timezone
+from app.campus_time import SchoolLookup
 from app.models import User
 
 NIGHT_START_HOUR = 21  # 9 PM
 NIGHT_END_HOUR = 6  # 6 AM
 FALLBACK_TIMEZONE = "UTC"
-
 
 def is_valid_timezone(tz_name: str) -> bool:
     try:
@@ -30,15 +27,13 @@ def is_valid_timezone(tz_name: str) -> bool:
         return False
 
 
-def resolve_signup_timezone(email: str, client_timezone: str | None) -> str:
+def resolve_signup_timezone(school: SchoolLookup, client_timezone: str | None) -> str:
     """Institution's timezone first (authoritative, not client-controlled).
     Falls back to the browser-reported timezone the frontend sends at
     signup, then to UTC as a last resort if neither is available/valid.
     """
-    domain = email.rsplit("@", 1)[-1].lower()
-    institution_tz = get_institution_timezone(domain)
-    if institution_tz:
-        return institution_tz
+    if school.timezone and is_valid_timezone(school.timezone):
+        return school.timezone
 
     if client_timezone and is_valid_timezone(client_timezone):
         return client_timezone

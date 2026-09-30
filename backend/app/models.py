@@ -1,10 +1,7 @@
 from datetime import datetime, timezone
-
 from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
 from app.database import Base
-
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
@@ -54,3 +51,10 @@ class Message(Base):
 
     room: Mapped["Room"] = relationship(back_populates="messages")
     author: Mapped["User"] = relationship(back_populates="messages")
+
+    @property
+    def display_name(self) -> str:
+        """Lets MessageOut (from_attributes) include the author's name, so
+        chat history shows the same names live messages do.
+        """
+        return self.author.display_name

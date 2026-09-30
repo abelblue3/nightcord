@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.auth import require_csrf_header
 from app.database import get_db
@@ -41,4 +41,10 @@ def get_room_messages(
     if not room:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found.")
 
-    return db.query(Message).filter(Message.room_id == room_id).order_by(Message.created_at.asc()).all()
+    return (
+        db.query(Message)
+        .options(joinedload(Message.author))  # display_name for every message, without a query per message
+        .filter(Message.room_id == room_id)
+        .order_by(Message.created_at.asc())
+        .all()
+    )

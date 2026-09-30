@@ -5,6 +5,13 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
   },
+  // `npm run dev` keeps hot reload while API calls and the chat socket go
+  // through the Ruby web layer (web/, port 4567), exactly as in production.
+  server: {
+    proxy: {
+      '/api': { target: 'http://localhost:4567', ws: true },
+    },
+  },
   build: {
     rollupOptions: {
       input: {

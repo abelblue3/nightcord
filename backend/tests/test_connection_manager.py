@@ -67,3 +67,20 @@ def test_disconnect_is_safe_when_room_never_connected():
     manager = ConnectionManager()
     # Should not raise even though room 42 has no connections.
     manager.disconnect(42, FakeWebSocket())
+
+
+class DeadWebSocket(FakeWebSocket):
+    async def send_json(self, message):
+        raise RuntimeError('Cannot call "send" once a close message has been sent.')
+
+
+def test_broadcast_drops_a_dead_connection_and_still_delivers_to_the_rest():
+    manager = ConnectionManager()
+    dead, alive = DeadWebSocket(), FakeWebSocket()
+    run(manager.connect(room_id=1, websocket=dead))
+    run(manager.connect(room_id=1, websocket=alive))
+
+    run(manager.broadcast(1, {"content": "hey"}))
+
+    assert alive.sent == [{"content": "hey"}]
+    assert manager.active_connections[1] == [alive]

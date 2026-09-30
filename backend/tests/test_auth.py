@@ -1,8 +1,6 @@
 from datetime import datetime, timedelta, timezone
-
 import httpx
 import pytest
-
 import dns.resolver
 
 from app.auth import (
@@ -15,12 +13,10 @@ from app.auth import (
     verify_password,
 )
 from app.config import settings
-from app.edu_domains import is_known_edu_institution
+from app.campus_time import NOT_FOUND, SchoolLookup
 from app.models import User
 
-
 # --- pure helper functions ---
-
 
 @pytest.mark.parametrize(
     "email,expected",
@@ -33,30 +29,9 @@ from app.models import User
     ],
 )
 def test_is_allowed_student_email(email, expected):
-    assert is_allowed_student_email(email) is expected
-
-
-# --- real institution dataset ---
-
-
-@pytest.mark.parametrize(
-    "domain,expected",
-    [
-        ("harvard.edu", True),
-        ("stanford.edu", True),
-        ("HARVARD.EDU", True),
-        ("cs.harvard.edu", True),  # subdomain of a known institution
-        ("grad.cs.harvard.edu", True),  # multi-level subdomain
-        ("not-a-real-school.edu", False),
-        ("harvard.edu.fake.com", False),  # known domain as a suffix, not the actual domain
-    ],
-)
-def test_is_known_edu_institution(domain, expected):
-    assert is_known_edu_institution(domain) is expected
-
+    assert is_allowed_student_email(email, NOT_FOUND) is expected
 
 # --- MX record check ---
-
 
 def test_has_valid_mx_record_true_when_answers_exist(monkeypatch):
     monkeypatch.setattr("app.auth.dns.resolver.resolve", lambda domain, rtype, lifetime: ["mx1.example.com"])
@@ -136,17 +111,17 @@ def test_is_allowed_student_email_known_institution_skips_mx_lookup(monkeypatch)
         raise AssertionError("should not need a DNS lookup for a known institution")
 
     monkeypatch.setattr("app.auth.has_valid_mx_record", fail_if_called)
-    assert is_allowed_student_email("student@harvard.edu") is True
+    assert is_allowed_student_email("student@harvard.edu", SchoolLookup(found=True, timezone=None)) is True
 
 
 def test_is_allowed_student_email_unknown_domain_accepted_with_valid_mx(monkeypatch):
     monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)
-    assert is_allowed_student_email("student@some-small-college.edu") is True
+    assert is_allowed_student_email("student@some-small-college.edu", NOT_FOUND) is True
 
 
 def test_is_allowed_student_email_unknown_domain_rejected_without_valid_mx(monkeypatch):
     monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: False)
-    assert is_allowed_student_email("student@typo-domain.edu") is False
+    assert is_allowed_student_email("student@typo-domain.edu", NOT_FOUND) is False
 
 
 def test_is_allowed_student_email_wrong_suffix_never_reaches_mx_check(monkeypatch):
@@ -154,7 +129,7 @@ def test_is_allowed_student_email_wrong_suffix_never_reaches_mx_check(monkeypatc
         raise AssertionError("should not check MX for a domain that already fails the suffix check")
 
     monkeypatch.setattr("app.auth.has_valid_mx_record", fail_if_called)
-    assert is_allowed_student_email("student@gmail.com") is False
+    assert is_allowed_student_email("student@gmail.com", NOT_FOUND) is False
 
 
 def test_hash_and_verify_password_roundtrip():
@@ -313,6 +288,14 @@ def test_google_auth_links_existing_password_account(client, db_session, monkeyp
     assert user.google_id == "google-sub-123"
 
 
+def test_google_auth_is_rate_limited(client, monkeypatch):
+    monkeypatch.setattr("app.routers.auth.verify_google_id_token", lambda credential: _fake_google_claims())
+
+    statuses = [client.post("/auth/google", json={"credential": "fake-credential"}).status_code for _ in range(11)]
+    assert statuses[:10] == [200] * 10
+    assert statuses[10] == 429
+
+
 def test_password_login_rejected_for_google_only_account(client, monkeypatch):
     monkeypatch.setattr("app.routers.auth.verify_google_id_token", lambda credential: _fake_google_claims())
     client.post("/auth/google", json={"credential": "fake-credential"})
@@ -323,9 +306,7 @@ def test_password_login_rejected_for_google_only_account(client, monkeypatch):
     assert res.status_code == 401
     assert res.json()["detail"] == "Incorrect email or password."
 
-
 # --- login: account lockout ---
-
 
 def test_lockout_after_max_failed_attempts(client, db_session):
     _signup(client, "lockout@university.edu")
@@ -372,7 +353,6 @@ def test_successful_login_resets_failed_attempt_counter(client, db_session):
 
 # --- login: timing-safe against enumeration ---
 
-
 def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, monkeypatch):
     """Every branch that doesn't have a real password to check (no such user,
     a Google-only account, a locked account) must still call into
@@ -395,9 +375,7 @@ def test_login_pays_the_same_bcrypt_cost_on_every_failure_path(client, monkeypat
     client.post("/auth/login", json={"email": "realwrong@university.edu", "password": "wrong"})
     assert len(calls) == 2
 
-
 # --- session cookie: logout and revocation ---
-
 
 def test_logout_clears_the_cookie(client):
     _signup(client, "logoutme@university.edu")
@@ -421,16 +399,13 @@ def test_logout_all_invalidates_the_token_everywhere(client):
     res = client.get("/rooms", cookies={"access_token": old_token})
     assert res.status_code == 401
 
-
 def test_logout_all_requires_csrf_header(client):
     _signup(client, "csrfcheck@university.edu")
 
     res = client.post("/auth/logout-all", headers={"X-Requested-With": "not-nightcord"})
     assert res.status_code == 403
 
-
 # --- helpers ---
-
 
 def _signup(client, email, password="password123") -> None:
     res = client.post(
