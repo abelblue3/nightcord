@@ -97,7 +97,6 @@ async def room_chat(
     websocket: WebSocket,
     room_id: int,
     skip_gate: str | None = None,
-    canary_token: str | None = None,
     db: Session = Depends(get_db),
 ):
     if not origin_allowed(websocket):
@@ -109,6 +108,10 @@ async def room_chat(
     if not room:
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
 
+    # The canary token comes in a header, never the URL: URLs end up in
+    # proxy and server logs. (The dev-only skip_gate stays a query param --
+    # browsers can't set headers on a WebSocket, and it's inert outside dev.)
+    canary_token = websocket.headers.get("x-canary-token")
     if not (gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
         user_tz = user.timezone or gate.FALLBACK_TIMEZONE
         if not gate.is_night_in_timezone(user_tz):

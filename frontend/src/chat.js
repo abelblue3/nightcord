@@ -54,7 +54,7 @@ async function init() {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  function appendMessage({ display_name, content, created_at, user_id }) {
+  function renderMessage({ display_name, content, created_at, user_id }) {
     const wrap = document.createElement('div');
     wrap.className = 'msg' + (currentUser && user_id === currentUser.id ? ' own' : '');
 
@@ -74,8 +74,31 @@ async function init() {
 
     wrap.appendChild(meta);
     wrap.appendChild(body);
-    chatLog.appendChild(wrap);
+    return wrap;
+  }
+
+  function appendMessage(msg) {
+    chatLog.appendChild(renderMessage(msg));
     chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  // History arrives a page at a time (newest page first). A full page means
+  // there may be older messages, so the "Load earlier" button stays.
+  const HISTORY_PAGE_SIZE = 50;
+  const loadEarlierBtn = document.getElementById('load-earlier');
+  let oldestMessageId = null;
+
+  function showOrHideLoadEarlier(page) {
+    if (page.length) oldestMessageId = page[0].id;
+    loadEarlierBtn.hidden = page.length < HISTORY_PAGE_SIZE;
+  }
+
+  function handleHistoryError(err) {
+    if (err.status === 403 && err.data?.timezone) {
+      renderClosedScreen(document.querySelector('.screen'), err.data.timezone);
+    } else {
+      showError(err.message);
+    }
   }
 
   // Message history is gated the same way room listing is -- this doubles
@@ -84,16 +107,31 @@ async function init() {
     try {
       const messages = await getRoomMessages(roomId);
       for (const msg of messages) appendMessage(msg);
+      showOrHideLoadEarlier(messages);
       return true;
     } catch (err) {
-      if (err.status === 403 && err.data?.timezone) {
-        renderClosedScreen(document.querySelector('.screen'), err.data.timezone);
-        return false;
-      }
-      showError(err.message);
+      handleHistoryError(err);
       return false;
     }
   }
+
+  loadEarlierBtn.addEventListener('click', async () => {
+    loadEarlierBtn.disabled = true;
+    try {
+      const older = await getRoomMessages(roomId, { before: oldestMessageId });
+      // Insert above what's shown without moving what the reader is looking at.
+      const heightBefore = chatLog.scrollHeight;
+      const fragment = document.createDocumentFragment();
+      for (const msg of older) fragment.appendChild(renderMessage(msg));
+      loadEarlierBtn.after(fragment);
+      chatLog.scrollTop += chatLog.scrollHeight - heightBefore;
+      showOrHideLoadEarlier(older);
+    } catch (err) {
+      handleHistoryError(err);
+    } finally {
+      loadEarlierBtn.disabled = false;
+    }
+  });
 
   let socket;
 

@@ -7,6 +7,7 @@ their device clock or IP address, specifically so it can't be spoofed by
 changing a system clock or using a VPN -- see the handoff doc's Decisions
 section for the full reasoning.
 """
+import secrets
 from datetime import datetime
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import Depends, Header, HTTPException, status
@@ -69,7 +70,11 @@ def canary_bypass_active(canary_token_header: str | None) -> bool:
     dev-only bypass above (which is correctly forbidden in production).
     Requires both sides to be a real, non-empty, matching secret.
     """
-    return bool(settings.canary_bypass_token) and canary_token_header == settings.canary_bypass_token
+    expected = settings.canary_bypass_token
+    if not expected or canary_token_header is None:
+        return False
+    # Constant-time, so response timing can't reveal how much of a guess matched.
+    return secrets.compare_digest(canary_token_header.encode(), expected.encode())
 
 
 def require_night_access(

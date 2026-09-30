@@ -115,8 +115,10 @@ export async function createRoom(name) {
   return request('/rooms', { method: 'POST', body: { name }, auth: true });
 }
 
-export async function getRoomMessages(roomId) {
-  return request(`/rooms/${roomId}/messages`, { auth: true });
+// Newest page first; pass `before` (a message id) to page further back.
+export async function getRoomMessages(roomId, { before } = {}) {
+  const query = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request(`/rooms/${roomId}/messages${query}`, { auth: true });
 }
 
 export async function googleAuth(credential, timezone) {

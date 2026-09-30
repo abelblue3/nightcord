@@ -12,6 +12,7 @@ import {
   createRoom,
   connectRoomSocket,
   googleAuth,
+  getRoomMessages,
 } from '../src/api.js';
 
 function mockFetchOnce(status, body) {
@@ -327,5 +328,19 @@ describe('same-origin defaults (served through the Ruby web layer)', () => {
     connectRoomSocket(42);
 
     expect(capturedUrl).toBe('wss://backend.example/ws/rooms/42');
+  });
+});
+
+describe('getRoomMessages', () => {
+  it('asks for the newest page by default', async () => {
+    mockFetchOnce(200, []);
+    await getRoomMessages(7);
+    expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages$/);
+  });
+
+  it('pages back with ?before=<oldest message id>', async () => {
+    mockFetchOnce(200, []);
+    await getRoomMessages(7, { before: 123 });
+    expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?before=123$/);
   });
 });

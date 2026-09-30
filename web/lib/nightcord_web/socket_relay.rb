@@ -2,7 +2,7 @@ require "async"
 require "async/http/endpoint"
 require "async/websocket/adapters/rack"
 require "async/websocket/client"
-require "rack/request"
+require_relative "client_ip"
 
 module NightcordWeb
   # Carries chat WebSockets (/api/ws/...) through to FastAPI (/ws/...),
@@ -51,8 +51,10 @@ module NightcordWeb
 
       # Origin is checked above and deliberately not forwarded -- FastAPI
       # treats a missing Origin as a trusted non-browser caller, which this is.
-      headers = [["x-forwarded-for", Rack::Request.new(env).ip]]
+      headers = [["x-forwarded-for", ClientIp.from_env(env)]]
       headers << ["cookie", env["HTTP_COOKIE"]] if env["HTTP_COOKIE"]
+      # The canary's gate bypass travels as a header, never in the URL.
+      headers << ["x-canary-token", env["HTTP_X_CANARY_TOKEN"]] if env["HTTP_X_CANARY_TOKEN"]
 
       Async::Task.current.with_timeout(UPSTREAM_CONNECT_TIMEOUT_SECONDS) do
         Async::WebSocket::Client.connect(Async::HTTP::Endpoint.parse(url), headers: headers)

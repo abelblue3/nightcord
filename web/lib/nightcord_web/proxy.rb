@@ -3,6 +3,8 @@ require "net/http"
 require "openssl"
 require "rack/request"
 
+require_relative "client_ip"
+
 module NightcordWeb
   # Forwards /api/* to FastAPI (with the /api prefix removed) and returns its
   # answer. Only the headers FastAPI actually reads are passed along, and only
@@ -48,7 +50,7 @@ module NightcordWeb
       end
       # FastAPI rate-limits per client IP. Without this, every user would
       # look like this one server and share a single limit.
-      upstream_request["X-Forwarded-For"] = request.ip
+      upstream_request["X-Forwarded-For"] = ClientIp.from_env(env)
 
       body = request.body&.read
       upstream_request.body = body if body && !body.empty?

@@ -75,6 +75,11 @@ uvicorn app.main:app --reload
 
 The API will be available at `http://localhost:8000` (docs at `/docs`).
 
+`ENVIRONMENT` defaults to `production` when unset, so a deploy that forgets it
+still gets secure cookies, HSTS, no dev gate bypass, and no public `/docs`.
+`.env.example` sets `development` for local work — keep that locally, and set
+`ENVIRONMENT=production` explicitly on Railway.
+
 ### Database migrations
 
 Schema changes are managed with **Alembic** — the app no longer auto-creates
@@ -142,12 +147,18 @@ the gate itself never calls it. If campus-time has no timezone for the school
 (unknown, held back, a chain spanning timezones, or unreachable), signup
 falls back to the browser's timezone, then UTC.
 
+Rooms are an open lounge by design: during night hours, every verified
+student can see every room, read its history, and join its chat. There are
+no private rooms.
+
 When the gate is closed, the 403 response includes the student's school
 timezone. That's deliberate: the frontend needs it for the "opens in"
 countdown, and it only ever goes to the signed-in student it belongs to.
 
 Chat also limits each connection to 5 messages per 5 seconds; extra messages
-are dropped, and a connection that keeps flooding is disconnected.
+are dropped, and a connection that keeps flooding is disconnected. History
+loads 50 messages at a time (`GET /rooms/{id}/messages?before=<id>`), and room
+creation is limited to 10 per hour per student.
 
 campus-time can't yet search by email domain, so the domain → institution
 step uses the bundled `school_domains.json` above. Once it can, that file and

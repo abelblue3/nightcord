@@ -71,10 +71,10 @@ async function main() {
       reject(new Error('timed out waiting for chat message echo'));
     }, 10_000);
 
-    const ws = new WebSocket(
-      `${WS_URL}/ws/rooms/${room.id}?canary_token=${encodeURIComponent(CANARY_TOKEN)}`,
-      { headers: { Cookie: sessionCookie } }
-    );
+    // The bypass token goes in a header, never the URL (URLs end up in logs).
+    const ws = new WebSocket(`${WS_URL}/ws/rooms/${room.id}`, {
+      headers: { Cookie: sessionCookie, 'X-Canary-Token': CANARY_TOKEN },
+    });
 
     ws.on('open', () => {
       ws.send(JSON.stringify({ content: nonce }));

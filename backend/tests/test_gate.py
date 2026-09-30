@@ -239,3 +239,25 @@ def test_websocket_dev_bypass_allows_connection_when_closed(client, logged_in_ga
         ws.send_json({"content": "hello despite closed gate"})
         received = ws.receive_json()
     assert received["content"] == "hello despite closed gate"
+
+
+def test_websocket_canary_bypass_uses_a_header(client, logged_in_gate_user, monkeypatch):
+    room = client.post("/rooms", json={"name": "gate-ws-canary-room"}).json()
+
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
+    monkeypatch.setattr("app.gate.settings.canary_bypass_token", "canary-secret")
+
+    with client.websocket_connect(f"/ws/rooms/{room['id']}", headers={"X-Canary-Token": "canary-secret"}) as ws:
+        ws.send_json({"content": "canary ping"})
+        assert ws.receive_json()["content"] == "canary ping"
+
+    # The old query-string form no longer works -- tokens in URLs end up in logs.
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/ws/rooms/{room['id']}?canary_token=canary-secret"):
+            pass
+
+
+def test_canary_bypass_rejects_a_near_miss(monkeypatch):
+    monkeypatch.setattr("app.gate.settings.canary_bypass_token", "canary-secret")
+    assert canary_bypass_active("canary-secreT") is False
+    assert canary_bypass_active("canary-secret-and-more") is False

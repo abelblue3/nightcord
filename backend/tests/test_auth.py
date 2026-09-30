@@ -304,6 +304,16 @@ def test_google_auth_is_rate_limited(client, monkeypatch):
     assert statuses[10] == 429
 
 
+def test_google_auth_trims_very_long_names(client, db_session, monkeypatch):
+    monkeypatch.setattr(
+        "app.routers.auth.verify_google_id_token",
+        lambda credential: _fake_google_claims(email="longname@university.edu", name="N" * 150),
+    )
+    res = client.post("/auth/google", json={"credential": "fake-credential"})
+    assert res.status_code == 200
+    assert len(res.json()["display_name"]) == 100
+
+
 def test_password_login_rejected_for_google_only_account(client, monkeypatch):
     monkeypatch.setattr("app.routers.auth.verify_google_id_token", lambda credential: _fake_google_claims())
     client.post("/auth/google", json={"credential": "fake-credential"})
@@ -406,6 +416,11 @@ def test_logout_all_invalidates_the_token_everywhere(client):
     # just that this client's local cookie got cleared.
     res = client.get("/rooms", cookies={"access_token": old_token})
     assert res.status_code == 401
+
+def test_logout_requires_csrf_header(client):
+    res = client.post("/auth/logout", headers={"X-Requested-With": "not-nightcord"})
+    assert res.status_code == 403
+
 
 def test_logout_all_requires_csrf_header(client):
     _signup(client, "csrfcheck@university.edu")
