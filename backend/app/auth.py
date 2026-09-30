@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.edu_domains import is_known_edu_institution
+from app.campus_time import SchoolLookup
 from app.models import User, as_utc
 
 MX_LOOKUP_TIMEOUT_SECONDS = 3.0
@@ -136,8 +136,15 @@ def is_breached_password(password: str) -> bool:
     return any(line.partition(":")[0] == suffix for line in response.text.splitlines())
 
 
-def is_allowed_student_email(email: str) -> bool:
-    domain = email.rsplit("@", 1)[-1].lower()
+def email_domain(email: str) -> str:
+    return email.rsplit("@", 1)[-1].lower()
+
+
+def is_allowed_student_email(email: str, school: SchoolLookup) -> bool:
+    """`school` is the lookup_school() result for this email's domain --
+    passed in so signup makes one round of campus-time calls, not two.
+    """
+    domain = email_domain(email)
 
     matches_allowed_suffix = any(
         domain == allowed.lstrip(".") or domain.endswith(allowed if allowed.startswith(".") else f".{allowed}")
@@ -146,11 +153,10 @@ def is_allowed_student_email(email: str) -> bool:
     if not matches_allowed_suffix:
         return False
 
-    # A domain we recognize as a real, accredited institution is trusted
-    # outright -- no need for a network call. Anything else still has to
-    # prove it can actually receive mail, which catches typos and
-    # nonexistent domains that happen to end in .edu.
-    if is_known_edu_institution(domain):
+    # A domain we recognize as a real institution is trusted outright.
+    # Anything else still has to prove it can actually receive mail, which
+    # catches typos and nonexistent domains that happen to end in .edu.
+    if school.found:
         return True
 
     return has_valid_mx_record(domain)

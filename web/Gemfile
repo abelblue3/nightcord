@@ -1,0 +1,14 @@
+source "https://rubygems.org"
+
+ruby "~> 3.3.0"
+
+gem "sinatra", "~> 4.1"
+gem "falcon", "~> 0.51"
+gem "async-websocket", "~> 0.30"
+
+group :test do
+  gem "rake", "~> 13.2"
+  gem "minitest", "~> 5.25"
+  gem "rack-test", "~> 2.2"
+  gem "webmock", "~> 3.25"
+end

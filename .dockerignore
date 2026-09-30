@@ -1,0 +1,11 @@
+# Build context for web/Dockerfile (the repo root). Keeps local secrets and
+# local-only build output out of the image -- notably frontend/.env, whose
+# VITE_API_URL would otherwise get baked into the production build.
+.git
+**/node_modules
+**/.env
+frontend/dist
+web/vendor
+web/.bundle
+backend/.venv
+**/__pycache__

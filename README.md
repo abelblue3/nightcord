@@ -9,12 +9,27 @@ to study alongside fellow college students without the daytime crowd.
 
 - **College students only** — verified student access
 - **Night-only** — rooms are only open during nighttime hours, gated by timezone
-- **Chat & video** — pick text or face-to-face company while you study
+- **Chat & Video** — pick text or face-to-face company while you study
 
 ## Status
 
-Backend-first build. Frontend will be a lightweight, fast-loading retro
-8-bit/arcade-style UI, light mode only for now.
+Text chat is live; video is not built yet. The frontend is a lightweight,
+fast-loading retro 8-bit/arcade-style UI with light and dark modes.
+
+## How it fits together
+
+```
+Browser ──> web/      Ruby (Sinatra on Falcon): serves the pages, carries /api
+                      (HTTP + chat WebSockets) through, logs each request
+              └──> backend/  Python (FastAPI): accounts, night gate, rooms, chat
+                               └──> PostgreSQL
+```
+
+- **`frontend/`** — the pages (vanilla JS + Vite), built into static files.
+- **`web/`** — the only thing the browser talks to. Everything is on one
+  domain, so the session cookie is first-party. No business logic. See
+  [web/README.md](web/README.md) for exactly what passes through it.
+- **`backend/`** — all the rules and data.
 
 ## Backend
 
@@ -29,8 +44,8 @@ python -m venv .venv
 .venv\Scripts\activate      # Windows
 pip install -r requirements.txt
 copy .env.example .env      # DATABASE_URL already matches docker-compose.yml;
-                             # set your own SECRET_KEY, and RESEND_API_KEY /
-                             # GOOGLE_CLIENT_ID if you need those features working
+                             # set your own SECRET_KEY, and GOOGLE_CLIENT_ID
+                             # if you need Google sign-in working
 ```
 
 You need a PostgreSQL database matching `DATABASE_URL` to exist. Easiest way
@@ -86,13 +101,14 @@ Other useful commands: `alembic current` (what revision the DB is on),
 ### Student email validation
 
 Beyond the `.edu` suffix check, signup validates the domain two more ways
-(`app/auth.py`, `app/edu_domains.py`):
+(`app/auth.py`, `app/campus_time.py`):
 
 1. **Known institution check** — the domain (or a parent of it, e.g.
-   `cs.harvard.edu` → `harvard.edu`) is looked up against
-   `app/data/edu_domains.json`, ~2,400 real U.S. `.edu` domains vendored from
-   [Hipo/university-domains-list](https://github.com/Hipo/university-domains-list).
-   A match is trusted immediately — no network call.
+   `cs.harvard.edu` → `harvard.edu`) is looked up in
+   `app/data/school_domains.json`: every `.edu` website in the NCES IPEDS
+   institution directory (~4,000), mapped to its institution IDs. A match is
+   trusted immediately — no DNS lookup. Regenerate the file with
+   `python scripts/build_school_domains.py`.
 2. **MX record fallback** — if the domain isn't in that list (a real but
    newer/smaller school our snapshot missed), we do a live DNS lookup to
    confirm it can actually receive mail. Fails closed: any lookup problem
@@ -100,15 +116,35 @@ Beyond the `.edu` suffix check, signup validates the domain two more ways
 
 ### Endpoints
 
-- `POST /auth/signup` — create account (requires an allowed, real-institution student email domain); sends a verification email, account is inactive until verified
-- `POST /auth/login` — get a JWT access token (rejects unverified accounts)
-- `POST /auth/verify-email` — activate an account from its emailed verification link, returns a JWT
-- `POST /auth/resend-verification` — request a new verification link
-- `POST /auth/google` — sign in/up via Google OAuth (`.edu`-restricted, auto-verified)
-- `GET /rooms` / `POST /rooms` — list / create chat rooms (auth required)
-- `GET /rooms/{room_id}/messages` — chat history for a room (auth required)
-- `WS /ws/rooms/{room_id}?token=<jwt>` — realtime chat over WebSocket
+Sessions live in an httpOnly `access_token` cookie set by the auth
+endpoints — the frontend never sees the token itself.
+
+- `POST /auth/signup` — create account (requires an allowed, real-institution student email domain; rejects breached passwords) and start a session
+- `POST /auth/login` — start a session (locks the account after repeated failures)
+- `POST /auth/google` — sign in/up via Google OAuth (`.edu`-restricted)
+- `POST /auth/logout` — end this browser's session
+- `POST /auth/logout-all` — end every session on every device
+- `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
+- `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
+- `WS /ws/rooms/{room_id}` — realtime chat over WebSocket (session cookie + night gate)
 - `GET /health` — health check
+
+### Night gate
+
+Rooms, history, and chat are only open 9pm–6am in the student's **school's**
+timezone. This is enforced server-side in `app/gate.py` — the frontend only
+uses it to show a countdown. Login and signup stay open around the clock.
+
+The school's timezone comes from the
+[campus-time API](https://campus-time.replit.app), asked once at signup
+(`GET /api/locations/edge:<institution ID>/time`) and stored on the account;
+the gate itself never calls it. If campus-time has no timezone for the school
+(unknown, held back, a chain spanning timezones, or unreachable), signup
+falls back to the browser's timezone, then UTC.
+
+campus-time can't yet search by email domain, so the domain → institution
+step uses the bundled `school_domains.json` above. Once it can, that file and
+its build script can go.
 
 ### Testing
 
@@ -118,22 +154,29 @@ pytest
 ```
 
 Tests run against an isolated in-memory SQLite database (never the real
-Postgres database) and mock both the Resend email API and Google token
-verification, so the suite needs no external services or `.env` file.
+Postgres database) and fake DNS lookups, the Have I Been Pwned check, and
+Google token verification, so the suite needs no external services or `.env`
+file. Set `TEST_DATABASE_URL` to run the same suite against real Postgres
+(CI does both).
 
 ## Frontend
 
 Stack: vanilla HTML/CSS/JS + Vite, no framework — self-hosted retro pixel
-fonts, dark mode, and a client-side night-time gate.
+fonts, dark mode, and a "closed" screen with a countdown whenever the
+server-side night gate says rooms are shut.
 
 ### Setup
 
 ```bash
 cd frontend
 npm install
-copy .env.example .env      # then edit VITE_API_URL / VITE_WS_URL if needed
+copy .env.example .env      # leave VITE_API_URL / VITE_WS_URL unset
 npm run dev
 ```
+
+`npm run dev` forwards `/api` to the Ruby web layer on port 4567, which
+forwards it to FastAPI on port 8000 — so run both of those too (see
+[web/README.md](web/README.md#running-locally)).
 
 ### Testing
 

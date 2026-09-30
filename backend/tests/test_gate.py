@@ -11,6 +11,7 @@ from app.gate import (
     is_valid_timezone,
     resolve_signup_timezone,
 )
+from app.campus_time import NOT_FOUND, SchoolLookup
 from app.models import User
 
 
@@ -57,16 +58,27 @@ def test_is_night_in_timezone_falls_back_to_utc_for_invalid_zone():
 
 def test_resolve_signup_timezone_uses_institution_when_known():
     # Institution wins even though the client claims a different zone.
-    assert resolve_signup_timezone("student@harvard.edu", "America/Los_Angeles") == "America/New_York"
+    school = SchoolLookup(found=True, timezone="America/New_York")
+    assert resolve_signup_timezone(school, "America/Los_Angeles") == "America/New_York"
 
 
 def test_resolve_signup_timezone_falls_back_to_client_when_school_unknown():
-    assert resolve_signup_timezone("student@totally-unknown-school.edu", "America/Denver") == "America/Denver"
+    assert resolve_signup_timezone(NOT_FOUND, "America/Denver") == "America/Denver"
+
+
+def test_resolve_signup_timezone_falls_back_to_client_when_school_has_no_timezone():
+    school = SchoolLookup(found=True, timezone=None)  # e.g. held back by campus-time, or a multi-zone chain
+    assert resolve_signup_timezone(school, "America/Denver") == "America/Denver"
+
+
+def test_resolve_signup_timezone_ignores_an_invalid_school_timezone():
+    school = SchoolLookup(found=True, timezone="Not/A/Zone")
+    assert resolve_signup_timezone(school, "America/Denver") == "America/Denver"
 
 
 def test_resolve_signup_timezone_falls_back_to_utc_when_nothing_valid():
-    assert resolve_signup_timezone("student@totally-unknown-school.edu", None) == FALLBACK_TIMEZONE
-    assert resolve_signup_timezone("student@totally-unknown-school.edu", "not-a-real-zone") == FALLBACK_TIMEZONE
+    assert resolve_signup_timezone(NOT_FOUND, None) == FALLBACK_TIMEZONE
+    assert resolve_signup_timezone(NOT_FOUND, "not-a-real-zone") == FALLBACK_TIMEZONE
 
 
 # --- dev / canary bypass ---

@@ -73,6 +73,24 @@ def no_real_dns(monkeypatch):
     monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)
 
 
+# What the campus-time API returns for the two real schools tests sign up
+# with; every other school is treated as one it has no timezone for.
+FAKE_CAMPUS_TIMEZONES = {
+    "166027": "America/New_York",  # harvard.edu
+    "243744": "America/Los_Angeles",  # stanford.edu
+}
+
+
+@pytest.fixture(autouse=True)
+def no_real_campus_time(monkeypatch):
+    """test_campus_time.py covers fetch_location_timezone's real HTTP logic
+    directly. Every other test gets fixed answers instead of calling the
+    live campus-time API; the domain -> school step still uses the real
+    bundled data, since that's local.
+    """
+    monkeypatch.setattr("app.campus_time.fetch_location_timezone", FAKE_CAMPUS_TIMEZONES.get)
+
+
 @pytest.fixture(autouse=True)
 def no_real_breach_check(monkeypatch):
     """Breach-check tests in test_auth.py cover is_breached_password's real

@@ -1,13 +1,53 @@
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, WebSocketException, status
+import json
+
+from fastapi import APIRouter, Depends, WebSocket, WebSocketException, status
 from sqlalchemy.orm import Session
 
 from app import gate
 from app.auth import ACCESS_TOKEN_COOKIE_NAME, decode_user_from_token
+from app.config import settings
 from app.connection_manager import manager
 from app.database import get_db
 from app.models import Message, Room, User
 
 router = APIRouter(tags=["chat"])
+
+# Taken from the column itself so the two can't drift apart. Postgres rejects
+# anything longer outright (SQLite silently stores it), so over-long content
+# has to be dropped here rather than left to fail at commit time.
+MAX_MESSAGE_LENGTH = Message.__table__.c.content.type.length
+
+
+def origin_allowed(websocket: WebSocket) -> bool:
+    """CORS doesn't apply to WebSockets, and with a SameSite=None session
+    cookie any other website could otherwise open a chat socket as whoever
+    is logged in. Browsers always send Origin on a WebSocket handshake, so
+    it's checked against the same allowlist CORS uses. A missing Origin means
+    a non-browser client (e.g. the canary), which has no victim's cookie to
+    ride, so it's let through to the normal cookie check.
+    """
+    origin = websocket.headers.get("origin")
+    return origin is None or origin in settings.cors_origin_list
+
+
+def parse_message_content(raw: str | None) -> str | None:
+    """Returns the message text to store, or None if the frame should be
+    ignored. Anything malformed is skipped rather than raised -- an uncaught
+    error here would drop the sender's connection over one bad frame.
+    """
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("content"), str):
+        return None
+
+    content = data["content"].strip()
+    if not content or len(content) > MAX_MESSAGE_LENGTH:
+        return None
+    return content
 
 
 def get_user_from_websocket(websocket: WebSocket, db: Session) -> User:
@@ -26,6 +66,9 @@ async def room_chat(
     canary_token: str | None = None,
     db: Session = Depends(get_db),
 ):
+    if not origin_allowed(websocket):
+        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed")
+
     user = get_user_from_websocket(websocket, db)
 
     room = db.get(Room, room_id)
@@ -38,11 +81,17 @@ async def room_chat(
             raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=f"gate-closed:{user_tz}")
 
     await manager.connect(room_id, websocket)
+    # Whatever ends this loop -- a normal disconnect or an unexpected error --
+    # the connection must come out of the room's broadcast list. A dead socket
+    # left behind would make every later broadcast in the room fail.
     try:
         while True:
-            data = await websocket.receive_json()
-            content = (data.get("content") or "").strip()
-            if not content:
+            frame = await websocket.receive()
+            if frame["type"] == "websocket.disconnect":
+                break
+
+            content = parse_message_content(frame.get("text"))
+            if content is None:
                 continue
 
             message = Message(room_id=room_id, user_id=user.id, content=content)
@@ -61,5 +110,5 @@ async def room_chat(
                     "created_at": message.created_at.isoformat(),
                 },
             )
-    except WebSocketDisconnect:
+    finally:
         manager.disconnect(room_id, websocket)

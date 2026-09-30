@@ -1,0 +1,9 @@
+# Loads the tests in this process instead of using Rake::TestTask, which
+# builds a shell command that breaks when the project path contains spaces.
+desc "Run the test suite"
+task :test do
+  $LOAD_PATH.unshift(File.expand_path("test", __dir__))
+  Dir[File.expand_path("test/**/*_test.rb", __dir__)].sort.each { |file| require file }
+end
+
+task default: :test

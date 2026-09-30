@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   saveSession,
   getUser,
@@ -276,5 +276,50 @@ describe('connectRoomSocket', () => {
     connectRoomSocket(42);
 
     expect(capturedUrl).toContain('skip_gate=1');
+  });
+});
+
+describe('same-origin defaults (served through the Ruby web layer)', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('calls /api on the current site when VITE_API_URL is not set', async () => {
+    vi.stubEnv('VITE_API_URL', '');
+    mockFetchOnce(200, []);
+
+    await listRooms();
+
+    expect(global.fetch.mock.calls[0][0]).toBe('/api/rooms');
+  });
+
+  it('opens the chat socket on the current site when VITE_WS_URL is not set', () => {
+    vi.stubEnv('VITE_WS_URL', '');
+    window.history.replaceState({}, '', '/');
+    let capturedUrl;
+    global.WebSocket = class {
+      constructor(url) {
+        capturedUrl = url;
+      }
+    };
+
+    connectRoomSocket(42);
+
+    expect(capturedUrl).toBe(`ws://${window.location.host}/api/ws/rooms/42`);
+  });
+
+  it('still honors an explicit VITE_WS_URL', () => {
+    vi.stubEnv('VITE_WS_URL', 'wss://backend.example');
+    window.history.replaceState({}, '', '/');
+    let capturedUrl;
+    global.WebSocket = class {
+      constructor(url) {
+        capturedUrl = url;
+      }
+    };
+
+    connectRoomSocket(42);
+
+    expect(capturedUrl).toBe('wss://backend.example/ws/rooms/42');
   });
 });

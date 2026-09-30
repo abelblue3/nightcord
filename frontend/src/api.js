@@ -1,7 +1,18 @@
 import { devSkipGateActive } from './nightGate.js';
 
-const API_URL = import.meta.env.VITE_API_URL;
-const WS_URL = import.meta.env.VITE_WS_URL;
+// Same-origin by default: the Ruby web layer (web/) serves these pages and
+// carries /api -- HTTP and WebSocket -- through to the backend, so the
+// session cookie is first-party. VITE_API_URL / VITE_WS_URL only need setting
+// to talk to a backend on a different host directly.
+function apiBaseUrl() {
+  return import.meta.env.VITE_API_URL || '/api';
+}
+
+function wsBaseUrl() {
+  if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
+  const scheme = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${scheme}//${window.location.host}/api`;
+}
 
 const USER_KEY = 'nightcord_user';
 
@@ -49,10 +60,10 @@ async function request(path, { method = 'GET', body, auth = false } = {}) {
   const headers = { 'Content-Type': 'application/json', 'X-Requested-With': 'nightcord' };
   if (auth && devSkipGateActive()) headers['X-Dev-Skip-Gate'] = '1';
 
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${apiBaseUrl()}${path}`, {
     method,
     headers,
-    credentials: 'include', // send/receive the httpOnly session cookie, including cross-site (Vercel <-> Railway)
+    credentials: 'include', // send/receive the httpOnly session cookie, even when VITE_API_URL points at another host
     body: body ? JSON.stringify(body) : undefined,
   });
 
@@ -116,5 +127,5 @@ export function connectRoomSocket(roomId) {
   const query = params.toString();
   // The session cookie rides along on the WebSocket handshake automatically
   // (it's a normal HTTP request under the hood) -- no token in the URL.
-  return new WebSocket(`${WS_URL}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
+  return new WebSocket(`${wsBaseUrl()}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
 }

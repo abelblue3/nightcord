@@ -5,6 +5,7 @@ from app.auth import (
     DUMMY_PASSWORD_HASH,
     clear_auth_cookie,
     create_access_token,
+    email_domain,
     get_current_user,
     hash_password,
     is_account_locked,
@@ -18,6 +19,7 @@ from app.auth import (
     verify_google_id_token,
     verify_password,
 )
+from app.campus_time import lookup_school
 from app.database import get_db
 from app.gate import resolve_signup_timezone
 from app.models import User
@@ -30,7 +32,8 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 @router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 @limiter.limit("5/hour")
 def signup(request: Request, response: Response, payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    if not is_allowed_student_email(payload.email):
+    school = lookup_school(email_domain(payload.email))
+    if not is_allowed_student_email(payload.email, school):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Signup requires a valid college student email address.",
@@ -49,7 +52,7 @@ def signup(request: Request, response: Response, payload: UserCreate, db: Sessio
         email=payload.email,
         hashed_password=hash_password(payload.password),
         display_name=payload.display_name,
-        timezone=resolve_signup_timezone(payload.email, payload.timezone),
+        timezone=resolve_signup_timezone(school, payload.timezone),
     )
     db.add(user)
     db.commit()
@@ -94,7 +97,8 @@ def login(request: Request, response: Response, payload: LoginRequest, db: Sessi
 
 
 @router.post("/google", response_model=UserOut)
-def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> User:
+@limiter.limit("10/minute")
+def google_auth(request: Request, response: Response, payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> User:
     claims = verify_google_id_token(payload.credential)
 
     email = claims.get("email")
@@ -104,7 +108,8 @@ def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = De
             detail="Google did not return a verified email address.",
         )
 
-    if not is_allowed_student_email(email):
+    school = lookup_school(email_domain(email))
+    if not is_allowed_student_email(email, school):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Sign-in requires a valid college student email address.",
@@ -121,14 +126,14 @@ def google_auth(response: Response, payload: GoogleAuthRequest, db: Session = De
     if user:
         user.google_id = google_id
         if user.timezone is None:
-            user.timezone = resolve_signup_timezone(email, payload.timezone)
+            user.timezone = resolve_signup_timezone(school, payload.timezone)
     else:
         user = User(
             email=email,
             hashed_password=None,
             google_id=google_id,
             display_name=claims.get("name") or email.split("@")[0],
-            timezone=resolve_signup_timezone(email, payload.timezone),
+            timezone=resolve_signup_timezone(school, payload.timezone),
         )
         db.add(user)
 
