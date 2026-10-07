@@ -83,6 +83,21 @@ def test_is_allowed_student_email_wrong_suffix_never_reaches_mx_check(monkeypatc
     assert is_allowed_student_email("student@gmail.com", NOT_FOUND) is False
 
 
+def test_is_allowed_student_email_known_school_on_a_non_edu_domain(monkeypatch):
+    def fail_if_called(domain):
+        raise AssertionError("a known school needs no DNS lookup")
+
+    monkeypatch.setattr("app.auth.has_valid_mx_record", fail_if_called)
+    # Some real colleges use .org/.com; being in the NCES school list is what counts.
+    assert is_allowed_student_email("student@afi.com", SchoolLookup(found=True, timezone=None)) is True
+
+
+def test_is_allowed_student_email_unknown_non_edu_domain_rejected(monkeypatch):
+    monkeypatch.setattr("app.auth.has_valid_mx_record", lambda domain: True)
+    # Receiving mail isn't enough off .edu: anyone can register a .org.
+    assert is_allowed_student_email("someone@random-club.org", NOT_FOUND) is False
+
+
 # --- Clerk session tokens ---
 
 
@@ -197,9 +212,19 @@ def test_non_student_email_is_rejected_and_removed_from_clerk(client, db_session
     result = sign_in("someone@gmail.com")
 
     assert result.response.status_code == 403
-    assert ".edu" in result.response.json()["detail"]
+    assert "school email" in result.response.json()["detail"]
     assert fake_clerk.deleted == [result.clerk_user_id]
     assert db_session.query(User).count() == 0
+
+
+def test_student_at_a_known_non_edu_school_can_join(client, db_session, fake_clerk, sign_in):
+    # afi.com is AFI Conservatory's domain in the NCES school directory.
+    result = sign_in("student@afi.com", timezone="America/Los_Angeles")
+
+    assert result.response.status_code == 200
+    assert fake_clerk.deleted == []
+    user = db_session.query(User).filter(User.email == "student@afi.com").first()
+    assert user.clerk_user_id == result.clerk_user_id
 
 
 def test_unverified_email_is_rejected(client, fake_clerk, sign_in):
@@ -253,3 +278,56 @@ def test_logout_all_revokes_every_clerk_session(client, fake_clerk, sign_in):
 
 def test_logout_all_needs_a_signed_in_user(client):
     assert client.post("/auth/logout-all").status_code == 401
+
+
+def test_jwt_key_is_accepted_without_its_begin_end_lines(monkeypatch):
+    # Copying only the key body from the dashboard is an easy mistake; the
+    # app wraps it back into a PEM instead of rejecting every sign-in.
+    from tests.conftest import TEST_PUBLIC_KEY_PEM
+
+    body = "".join(line for line in TEST_PUBLIC_KEY_PEM.splitlines() if "-----" not in line)
+    monkeypatch.setattr("app.clerk_auth.settings.clerk_jwt_key", body)
+
+    assert clerk_auth.verify_session_token(make_token("user_abc"))["sub"] == "user_abc"
+
+
+# --- POST /auth/check-email: the instant check while signing up ---
+
+
+@pytest.mark.parametrize(
+    "email,allowed",
+    [
+        ("student@harvard.edu", True),  # known school
+        ("student@cs.stanford.edu", True),  # subdomain of a known school
+        ("student@afi.com", True),  # known school on a non-.edu domain
+        ("student@some-small-college.edu", True),  # unknown .edu that receives mail
+        ("someone@gmail.com", False),
+        ("someone@random-club.org", False),
+    ],
+)
+def test_check_email(client, email, allowed):
+    res = client.post("/auth/check-email", json={"email": email})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["allowed"] is allowed
+    assert (body["message"] is None) is allowed
+
+
+def test_check_email_never_calls_clerk_or_campus_time(client, fake_clerk, monkeypatch):
+    def fail_if_called(school_id):
+        raise AssertionError("the instant check must not call campus-time")
+
+    monkeypatch.setattr("app.campus_time.fetch_location_timezone", fail_if_called)
+    fake_clerk.unavailable = True  # any Clerk call would fail
+
+    assert client.post("/auth/check-email", json={"email": "student@harvard.edu"}).json()["allowed"] is True
+
+
+def test_check_email_rejects_malformed_addresses(client):
+    assert client.post("/auth/check-email", json={"email": "not-an-email"}).status_code == 422
+
+
+def test_check_email_is_rate_limited(client):
+    statuses = [client.post("/auth/check-email", json={"email": "a@harvard.edu"}).status_code for _ in range(31)]
+    assert statuses[-1] == 429

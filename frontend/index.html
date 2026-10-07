@@ -11,14 +11,19 @@
     <div class="screen">
       <div class="stack">
         <h1 class="center-text">NIGHTCORD<span class="blink">_</span></h1>
-        <p class="center-text hint" style="margin-top: -8px;">a quiet room for night owls studying late</p>
-        <p class="center-text hint" style="margin-top: -8px; font-size: 0.85rem;">sign up any time — study rooms open 9pm–6am at your school</p>
+        <p class="center-text hint" style="margin-top: -8px;">a quiet room for night owls studying late from 9pm–6am</p>
 
         <div class="error-box" id="error-box"></div>
-        <p class="center-text hint">Sign up with your college (.edu) email — we'll send you a code to confirm it.</p>
         <!-- Clerk's sign-in / sign-up screen (styled to match) is mounted here. -->
         <div id="clerk-auth" class="clerk-auth"></div>
       </div>
+      <footer class="site-footer">
+        <a href="/terms.html">Terms</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy.html">Privacy</a>
+        <span aria-hidden="true">·</span>
+        <a href="#" data-cookie-settings>Cookie settings</a>
+      </footer>
     </div>
 
     <script type="module" src="/src/auth.js"></script>

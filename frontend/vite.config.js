@@ -18,6 +18,8 @@ export default defineConfig({
         main: resolve(import.meta.dirname, 'index.html'),
         rooms: resolve(import.meta.dirname, 'rooms.html'),
         room: resolve(import.meta.dirname, 'room.html'),
+        terms: resolve(import.meta.dirname, 'terms.html'),
+        privacy: resolve(import.meta.dirname, 'privacy.html'),
       },
     },
   },

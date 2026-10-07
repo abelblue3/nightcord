@@ -1,5 +1,6 @@
 import { devSkipGateActive, getBrowserTimezone } from './nightGate.js';
 import { getSessionToken, loadClerk, signOutOfClerk } from './clerk.js';
+import { getConsent, markConsentRecorded } from './consent.js';
 
 // Same-origin by default: the Ruby web layer (web/) serves these pages and
 // carries /api -- HTTP and WebSocket -- through to the backend.
@@ -109,7 +110,32 @@ async function request(path, { method = 'GET', body, auth = false, retried = fal
 export async function startSession(timezone) {
   const user = await request('/auth/session', { method: 'POST', body: { timezone } });
   saveSession(user);
+  // A cookie choice made before signing in gets logged for this account now.
+  await syncConsent();
   return user;
+}
+
+// Logs the visitor's current cookie choice on the server (proof of consent)
+// if they're signed in and it hasn't been logged for their account yet.
+// Never throws: the choice in the browser is honored either way.
+export async function syncConsent() {
+  const state = getConsent();
+  const user = getUser();
+  if (!state || !user || state.recordedFor === user.id) return;
+  try {
+    await request('/consent', {
+      method: 'POST',
+      body: { policy_version: state.version, ...state.choices },
+    });
+    markConsentRecorded(user.id);
+  } catch {
+    // Retried on the next sign-in or choice.
+  }
+}
+
+// "Could this address join?" -- asked while it's being typed into sign-up.
+export async function checkSignupEmail(email) {
+  return request('/auth/check-email', { method: 'POST', body: { email } });
 }
 
 export async function logoutAllDevices() {

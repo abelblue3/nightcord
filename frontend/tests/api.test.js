@@ -23,7 +23,10 @@ import {
   createRoom,
   connectRoomSocket,
   getRoomMessages,
+  checkSignupEmail,
+  syncConsent,
 } from '../src/api.js';
+import { getConsent, saveConsent } from '../src/consent.js';
 
 function jsonResponse(status, body) {
   return { ok: status >= 200 && status < 300, status, json: async () => body };
@@ -180,6 +183,65 @@ describe('request wrapper', () => {
   });
 });
 
+describe('checkSignupEmail', () => {
+  it('asks the backend whether the address could join', async () => {
+    mockFetchOnce(200, { allowed: false, message: 'nope' });
+
+    const verdict = await checkSignupEmail('someone@gmail.com');
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/auth/check-email');
+    expect(JSON.parse(options.body)).toEqual({ email: 'someone@gmail.com' });
+    expect(verdict).toEqual({ allowed: false, message: 'nope' });
+  });
+});
+
+describe('syncConsent (server log of cookie choices)', () => {
+  it('logs the choice once for a signed-in student', async () => {
+    saveSession({ id: 5, display_name: 'E' });
+    saveConsent({ preferences: true, diagnostics: false });
+    mockFetchOnce(201, { message: 'Consent recorded.' });
+
+    await syncConsent();
+    await syncConsent(); // already logged -- no second request
+
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toContain('/consent');
+    expect(JSON.parse(options.body)).toMatchObject({ preferences: true, diagnostics: false });
+    expect(getConsent().recordedFor).toBe(5);
+  });
+
+  it('does nothing for visitors who are not signed in', async () => {
+    saveConsent({ preferences: true });
+    global.fetch = vi.fn();
+
+    await syncConsent();
+
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('never throws -- the browser copy still counts', async () => {
+    saveSession({ id: 5 });
+    saveConsent({ diagnostics: true });
+    mockFetchOnce(500, {});
+
+    await expect(syncConsent()).resolves.toBeUndefined();
+    expect(getConsent().recordedFor).toBeNull();
+  });
+
+  it('a choice made before signing in is logged right after sign-in', async () => {
+    saveConsent({ preferences: false, diagnostics: true });
+    mockFetchSequence([200, { id: 9, display_name: 'N', timezone: 'UTC' }], [201, { message: 'Consent recorded.' }]);
+
+    await startSession('UTC');
+
+    const paths = global.fetch.mock.calls.map(([url]) => url.replace(/^.*?(\/auth\/session|\/consent)$/, '$1'));
+    expect(paths).toEqual(['/auth/session', '/consent']);
+    expect(getConsent().recordedFor).toBe(9);
+  });
+});
+
 describe('startSession', () => {
   it('posts the browser timezone and caches the account (without the email)', async () => {
     mockFetchOnce(200, { id: 7, email: 'a@university.edu', display_name: 'A', timezone: 'America/Denver' });
@@ -195,9 +257,9 @@ describe('startSession', () => {
 
   it('a refusal (e.g. not a .edu address) is thrown, not redirected', async () => {
     captureRedirects();
-    mockFetchOnce(403, { detail: 'Only college student (.edu) emails can join nightcord.' });
+    mockFetchOnce(403, { detail: 'nightcord is for college students — please sign up with your school email address.' });
 
-    await expect(startSession(null)).rejects.toThrow('.edu');
+    await expect(startSession(null)).rejects.toThrow('school email');
     expect(window.location.href).toBe('');
   });
 });

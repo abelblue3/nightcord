@@ -8,12 +8,19 @@ instance's public key (CLERK_JWT_KEY), so ordinary requests never call
 Clerk -- only first sign-in, rejecting a non-student, and "log out of all
 devices" do.
 """
+import logging
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import httpx
 import jwt
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from app.config import settings
+
+# uvicorn's logger, so these lines show up in the server output alongside
+# its own. They never include tokens or keys -- only why something failed.
+logger = logging.getLogger("uvicorn.error")
 
 CLERK_API_TIMEOUT_SECONDS = 5.0
 # Tolerates small clock differences between Clerk and this server.
@@ -44,6 +51,10 @@ def verify_session_token(token: str) -> dict:
             leeway=TOKEN_LEEWAY_SECONDS,
             options={"require": ["exp", "nbf", "sub"]},
         )
+    except jwt.ImmatureSignatureError as error:
+        # Usually this machine's clock running behind Clerk's.
+        now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+        raise InvalidSessionToken(f"{error} -- is this server's clock behind? It reads {now}") from error
     except jwt.PyJWTError as error:
         raise InvalidSessionToken(str(error)) from error
 
@@ -55,6 +66,25 @@ def verify_session_token(token: str) -> dict:
         raise InvalidSessionToken(f"Token issued to an unknown origin: {authorized_party}")
 
     return claims
+
+
+def log_configuration_problems() -> None:
+    """Called at startup, so a missing or malformed key shows up once in
+    the server output instead of as unexplained 401s."""
+    public_key = settings.clerk_jwt_public_key
+    if not public_key:
+        logger.warning("CLERK_JWT_KEY is not set -- every sign-in will be rejected.")
+    else:
+        try:
+            load_pem_public_key(public_key.encode())
+        except ValueError:
+            logger.error(
+                "CLERK_JWT_KEY isn't a readable PEM public key -- it should run from "
+                "-----BEGIN PUBLIC KEY----- to -----END PUBLIC KEY-----, with \\n for each line break."
+            )
+    if not settings.clerk_secret_key:
+        logger.warning("CLERK_SECRET_KEY is not set -- first sign-ins can't be completed.")
+    logger.info("Accepting Clerk sessions from: %s", ", ".join(settings.cors_origin_list) or "(none)")
 
 
 @dataclass(frozen=True)

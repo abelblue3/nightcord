@@ -107,19 +107,27 @@ Other useful commands: `alembic current` (what revision the DB is on),
 
 ### Student email validation
 
-Beyond the `.edu` suffix check, signup validates the domain two more ways
-(`app/auth.py`, `app/campus_time.py`):
+Clerk proves the student owns the address; nightcord then decides whether
+the address belongs to a college (`app/auth.py`, `app/campus_time.py`):
 
-1. **Known institution check** — the domain (or a parent of it, e.g.
+1. **Known school** — the domain (or a parent of it, e.g.
    `cs.harvard.edu` → `harvard.edu`) is looked up in
-   `app/data/school_domains.json`: every `.edu` website in the NCES IPEDS
-   institution directory (~4,000), mapped to its institution IDs. A match is
-   trusted immediately — no DNS lookup. Regenerate the file with
+   `app/data/school_domains.json`: every school website in the NCES IPEDS
+   directory of US institutions (~4,900 domains), mapped to its institution
+   IDs. A match is admitted whatever the domain ends in — about a fifth of US
+   institutions (mostly smaller trade, religious and arts schools) use
+   `.org`, `.com`, `.us` and so on. Free hosting platforms and K-12 district
+   domains are left out of the list. Regenerate it with
    `python scripts/build_school_domains.py`.
-2. **MX record fallback** — if the domain isn't in that list (a real but
-   newer/smaller school our snapshot missed), we do a live DNS lookup to
-   confirm it can actually receive mail. Fails closed: any lookup problem
+2. **Unknown `.edu`** — a `.edu` domain that isn't in the list (a real but
+   newer/smaller school the snapshot missed) is admitted if a live DNS lookup
+   confirms it can receive mail. Fails closed: any lookup problem
    (nonexistent domain, no mail servers, timeout) rejects the signup.
+
+Any other domain is rejected. Note that a school that uses a larger
+organization's domain (e.g. a hospital-run nursing school) admits that
+organization's addresses too. International schools aren't covered — the
+NCES directory and campus-time are US-only.
 
 ### Clerk setup
 
@@ -224,6 +232,24 @@ npm run dev
 `npm run dev` forwards `/api` to the Ruby web layer on port 4567, which
 forwards it to FastAPI on port 8000 — so run both of those too (see
 [web/README.md](web/README.md#running-locally)).
+
+### Cookies, consent and legal pages
+
+- **Cookie banner** (`src/consentBanner.js`): shown until a visitor chooses.
+  *Essential* (sign-in, bot protection, session info) is always on;
+  *Preferences* (remembering the theme) and *Diagnostics* (Sentry crash
+  reports) are off until they agree. Sentry isn't even downloaded without
+  consent. "Cookie settings" in every page's footer reopens the choices.
+- **Consent log**: signed-in students' choices are also recorded on the
+  backend (`POST /consent`, table `consent_records`, one row per choice).
+- **Keep the pages honest**: the cookie table in `privacy.html`, the
+  categories in `consentBanner.js`, and the storage the code actually uses
+  must match. When the cookie section changes, bump `CONSENT_VERSION` in
+  `src/consent.js` so everyone is asked again.
+- **Legal pages** (`terms.html`, `privacy.html`) are **drafts** with
+  `[PLACEHOLDERS]` — have them reviewed by a lawyer before launch. Clerk's
+  sign-up "I agree" checkbox is turned on in the Clerk dashboard and links to
+  them.
 
 ### Testing
 

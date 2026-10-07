@@ -5,9 +5,10 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
+from app import clerk_auth
 from app.config import settings
 from app.rate_limit import limiter
-from app.routers import auth, chat, rooms
+from app.routers import auth, chat, consent, rooms
 
 if settings.sentry_dsn:
     sentry_sdk.init(
@@ -29,6 +30,8 @@ def api_docs_settings(environment: str) -> dict:
 app = FastAPI(title="nightcord", **api_docs_settings(settings.environment))
 
 app.state.limiter = limiter
+
+clerk_auth.log_configuration_problems()
 
 
 @app.exception_handler(RateLimitExceeded)
@@ -63,6 +66,7 @@ async def add_security_headers(request, call_next):
 app.include_router(auth.router)
 app.include_router(rooms.router)
 app.include_router(chat.router)
+app.include_router(consent.router)
 
 
 @app.get("/health")

@@ -7,6 +7,18 @@ class SessionStart(BaseModel):
     # record (see gate.resolve_signup_timezone).
     timezone: str | None = None
 
+class EmailCheck(BaseModel):
+    email: EmailStr
+
+class EmailCheckOut(BaseModel):
+    allowed: bool
+    message: str | None
+
+class ConsentIn(BaseModel):
+    policy_version: str = Field(min_length=1, max_length=20)
+    preferences: bool
+    diagnostics: bool
+
 class UserOut(BaseModel):
     id: int
     email: EmailStr

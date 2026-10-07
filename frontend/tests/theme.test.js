@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { getTheme, setTheme, applyTheme, initThemeToggle } from '../src/theme.js';
+import { saveConsent } from '../src/consent.js';
 
 beforeEach(() => {
   localStorage.clear();
+  sessionStorage.clear();
   document.documentElement.removeAttribute('data-theme');
 });
 
@@ -11,9 +13,15 @@ describe('getTheme', () => {
     expect(getTheme()).toBe('light');
   });
 
-  it('returns whatever was stored', () => {
+  it('returns a remembered theme', () => {
     localStorage.setItem('nightcord_theme', 'dark');
     expect(getTheme()).toBe('dark');
+  });
+
+  it("prefers this visit's choice over a remembered one", () => {
+    localStorage.setItem('nightcord_theme', 'dark');
+    sessionStorage.setItem('nightcord_theme', 'light');
+    expect(getTheme()).toBe('light');
   });
 });
 
@@ -30,11 +38,36 @@ describe('applyTheme', () => {
   });
 });
 
-describe('setTheme', () => {
-  it('persists to localStorage and applies immediately', () => {
+describe('setTheme and the Preferences consent', () => {
+  it('without consent, the theme lasts for this visit only', () => {
+    setTheme('dark');
+    expect(sessionStorage.getItem('nightcord_theme')).toBe('dark');
+    expect(localStorage.getItem('nightcord_theme')).toBeNull();
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  });
+
+  it('with consent, the theme is remembered between visits', () => {
+    saveConsent({ preferences: true });
     setTheme('dark');
     expect(localStorage.getItem('nightcord_theme')).toBe('dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(sessionStorage.getItem('nightcord_theme')).toBeNull();
+  });
+
+  it('withdrawing consent stops remembering it (but keeps it for this visit)', () => {
+    saveConsent({ preferences: true });
+    setTheme('dark');
+
+    saveConsent({ preferences: false });
+
+    expect(localStorage.getItem('nightcord_theme')).toBeNull();
+    expect(sessionStorage.getItem('nightcord_theme')).toBe('dark');
+    expect(getTheme()).toBe('dark');
+  });
+
+  it('granting consent later starts remembering the current theme', () => {
+    setTheme('dark');
+    saveConsent({ preferences: true });
+    expect(localStorage.getItem('nightcord_theme')).toBe('dark');
   });
 });
 

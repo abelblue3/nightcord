@@ -30,7 +30,14 @@ class Settings(BaseSettings):
 
     @property
     def clerk_jwt_public_key(self) -> str:
-        return self.clerk_jwt_key.replace("\\n", "\n").strip()
+        key = self.clerk_jwt_key.replace("\\n", "\n").strip()
+        if key and "BEGIN" not in key:
+            # Just the base64 body, without the BEGIN/END lines (easy to end up
+            # with when copying from the dashboard) -- wrap it into a PEM.
+            body = "".join(key.split())
+            lines = [body[i : i + 64] for i in range(0, len(body), 64)]
+            key = "-----BEGIN PUBLIC KEY-----\n" + "\n".join(lines) + "\n-----END PUBLIC KEY-----"
+        return key
 
     class Config:
         env_file = ".env"

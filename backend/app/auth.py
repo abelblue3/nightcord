@@ -42,22 +42,20 @@ def is_allowed_student_email(email: str, school: SchoolLookup) -> bool:
     """`school` is the lookup_school() result for this email's domain --
     passed in so a sign-in makes one round of campus-time calls, not two.
     """
-    domain = email_domain(email)
+    # A domain that belongs to a school in the NCES directory is trusted
+    # whatever it ends in -- some real colleges use .org, .com, .us, ...
+    if school.found:
+        return True
 
+    # Anything else must be an allowed suffix (.edu by default -- only
+    # accredited institutions can register one) and must actually receive
+    # mail, which catches typos and nonexistent domains that end in .edu.
+    domain = email_domain(email)
     matches_allowed_suffix = any(
         domain == allowed.lstrip(".") or domain.endswith(allowed if allowed.startswith(".") else f".{allowed}")
         for allowed in settings.allowed_email_domain_list
     )
-    if not matches_allowed_suffix:
-        return False
-
-    # A domain we recognize as a real institution is trusted outright.
-    # Anything else still has to prove it can actually receive mail, which
-    # catches typos and nonexistent domains that happen to end in .edu.
-    if school.found:
-        return True
-
-    return has_valid_mx_record(domain)
+    return matches_allowed_suffix and has_valid_mx_record(domain)
 
 
 def credentials_error() -> HTTPException:
@@ -69,7 +67,8 @@ def verified_claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
         raise credentials_error()
     try:
         return clerk_auth.verify_session_token(credentials.credentials)
-    except clerk_auth.InvalidSessionToken:
+    except clerk_auth.InvalidSessionToken as error:
+        clerk_auth.logger.warning("Rejected a Clerk session token: %s", error)
         raise credentials_error()
 
 
@@ -79,7 +78,8 @@ def user_from_token(token: str, db: Session) -> User | None:
     """
     try:
         claims = clerk_auth.verify_session_token(token)
-    except clerk_auth.InvalidSessionToken:
+    except clerk_auth.InvalidSessionToken as error:
+        clerk_auth.logger.warning("Rejected a Clerk session token on a chat socket: %s", error)
         return None
     return db.query(User).filter(User.clerk_user_id == claims["sub"]).first()
 

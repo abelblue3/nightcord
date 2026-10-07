@@ -5,7 +5,7 @@ looked up once at signup and stored on the account -- the night gate never
 calls it per request.
 
 Temporary: campus-time can't search by email domain yet, so the domain ->
-school step uses data/school_domains.json (each .edu website host in NCES
+school step uses data/school_domains.json (each school website host in NCES
 IPEDS mapped to its institution IDs, no timezones; regenerate with
 scripts/build_school_domains.py). campus-time location IDs are
 "edge:<institution ID>", so each school's timezone is one API call. Once

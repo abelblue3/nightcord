@@ -7,18 +7,19 @@ from sqlalchemy.orm import Session
 
 from app import clerk_auth
 from app.auth import bearer_scheme, email_domain, get_current_user, is_allowed_student_email, verified_claims
-from app.campus_time import lookup_school
+from app.campus_time import SchoolLookup, find_school_ids, lookup_school
 from app.database import get_db
 from app.gate import resolve_signup_timezone
 from app.models import User
 from app.rate_limit import limiter
-from app.schemas import MessageResponse, SessionStart, UserOut
+from app.schemas import EmailCheck, EmailCheckOut, MessageResponse, SessionStart, UserOut
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 DISPLAY_NAME_MAX_LENGTH = User.__table__.c.display_name.type.length
+NOT_A_STUDENT_MESSAGE = "nightcord is for college students — please sign up with your school email address."
 
 
 def clerk_unavailable() -> HTTPException:
@@ -41,6 +42,8 @@ def start_session(
     that address may use nightcord, and creates or links the nightcord
     account for it.
     """
+    if credentials is None:
+        clerk_auth.logger.warning("POST /auth/session arrived without a Clerk session token (no Authorization header).")
     clerk_user_id = verified_claims(credentials)["sub"]
 
     try:
@@ -61,10 +64,7 @@ def start_session(
             clerk_auth.delete_user(clerk_user_id)
         except clerk_auth.ClerkAPIError:
             logger.exception("Clerk delete_user failed for a rejected sign-up")
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only college student (.edu) emails can join nightcord.",
-        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_A_STUDENT_MESSAGE)
 
     user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
     if user is None:
@@ -90,6 +90,20 @@ def start_session(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/check-email", response_model=EmailCheckOut)
+@limiter.limit("30/minute")
+def check_email(request: Request, payload: EmailCheck) -> EmailCheckOut:
+    """Answers "could this address join?" while someone is still typing it
+    into the sign-up form, so a non-student is stopped before Clerk emails
+    them a code. It only reads the bundled school list (plus a DNS lookup for
+    an unknown .edu) -- no Clerk or campus-time calls -- and it says nothing
+    about whether an account exists. /auth/session still enforces the rule.
+    """
+    school = SchoolLookup(found=bool(find_school_ids(email_domain(payload.email))), timezone=None)
+    allowed = is_allowed_student_email(payload.email, school)
+    return EmailCheckOut(allowed=allowed, message=None if allowed else NOT_A_STUDENT_MESSAGE)
 
 
 @router.post("/logout-all", response_model=MessageResponse)

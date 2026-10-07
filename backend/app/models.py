@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -58,3 +58,19 @@ class Message(Base):
         chat history shows the same names live messages do.
         """
         return self.author.display_name
+
+
+class ConsentRecord(Base):
+    """One row per cookie/data choice a signed-in student makes -- never
+    updated, so the history shows what they agreed to and when (proof of
+    consent). Essential storage isn't recorded: it isn't optional.
+    """
+
+    __tablename__ = "consent_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    preferences: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    diagnostics: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

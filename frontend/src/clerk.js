@@ -1,11 +1,12 @@
 // Clerk runs sign-up, sign-in and email verification. This module loads it
 // once per page and hands out short-lived session tokens for API calls.
 //
-// Clerk's script is loaded from Clerk's own CDN on the instance's Frontend
-// API host rather than bundled: the npm build is ~1.5 MB, while the browser
-// build is a fraction of that and fetches the sign-in screens only on pages
-// that show them.
+// Clerk's scripts are loaded from Clerk's own CDN on the instance's Frontend
+// API host rather than bundled (the npm build is ~1.5 MB). The core script
+// handles sessions and tokens; the prebuilt screens are a separate UI script,
+// loaded only on the page that shows them (the sign-in page).
 const CLERK_JS_MAJOR = 6;
+const CLERK_UI_MAJOR = 1;
 
 // Clerk's screens in nightcord's look. Colors and fonts point at the site's
 // own CSS variables, so they follow the light/dark toggle automatically; the
@@ -23,14 +24,22 @@ export const appearance = {
     colorInputForeground: 'var(--ink)',
     colorBorder: 'var(--ink)',
     fontFamily: 'var(--font-body)',
-    fontFamilyButtons: 'var(--font-display)',
+    // Clerk also uses the "button" font for the Google/Microsoft buttons and
+    // the "Secured by" / "Development mode" footer, so this is the body font;
+    // style.css puts the main Continue button back in the display font.
+    fontFamilyButtons: 'var(--font-body)',
     fontSize: '1.1rem',
     borderRadius: '0',
   },
   elements: {
+    // Clerk caps its card at 25rem; fill the page's 480px column instead so
+    // it lines up (and centers) with the title and the site's other panels.
+    rootBox: { width: '100%' },
+    cardBox: { width: '100%', maxWidth: '100%' },
     card: 'panel',
     formButtonPrimary: 'btn btn-primary',
-    socialButtonsBlockButton: 'btn',
+    // Styled in style.css to match the form labels (not .btn's display font).
+    socialButtonsBlockButton: 'clerk-social-button',
   },
 };
 
@@ -46,16 +55,19 @@ function loadScript(src, publishableKey) {
     script.src = src;
     script.async = true;
     script.crossOrigin = 'anonymous';
-    script.dataset.clerkPublishableKey = publishableKey;
+    if (publishableKey) script.dataset.clerkPublishableKey = publishableKey;
     script.onload = resolve;
-    script.onerror = () => reject(new Error('Could not load Clerk.'));
+    script.onerror = () => reject(new Error(`Could not load ${src}`));
     document.head.appendChild(script);
   });
 }
 
 let loading = null;
 
-export function loadClerk() {
+// `withUi: true` also loads Clerk's prebuilt screens (needed for
+// mountSignIn). The first call on a page decides, so the sign-in page must
+// ask for the UI before anything else loads Clerk.
+export function loadClerk({ withUi = false } = {}) {
   if (!loading) {
     loading = (async () => {
       const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -63,10 +75,17 @@ export function loadClerk() {
         throw new Error('VITE_CLERK_PUBLISHABLE_KEY is not set -- add it to frontend/.env.');
       }
       const host = frontendApiHost(publishableKey);
-      await loadScript(`https://${host}/npm/@clerk/clerk-js@${CLERK_JS_MAJOR}/dist/clerk.browser.js`, publishableKey);
-      // With data-clerk-publishable-key set, the script creates the instance.
+      await Promise.all([
+        loadScript(`https://${host}/npm/@clerk/clerk-js@${CLERK_JS_MAJOR}/dist/clerk.browser.js`, publishableKey),
+        withUi && loadScript(`https://${host}/npm/@clerk/ui@${CLERK_UI_MAJOR}/dist/ui.browser.js`),
+      ]);
+      // With data-clerk-publishable-key set, the core script creates the instance.
       const clerk = window.Clerk;
-      await clerk.load({ appearance });
+      await clerk.load({
+        appearance,
+        telemetry: false, // no usage data to Clerk (see the Privacy Policy)
+        ...(withUi && { ui: { ClerkUI: window.__internal_ClerkUICtor } }),
+      });
       return clerk;
     })();
     // A failed load (e.g. offline) can be retried on the next call.
