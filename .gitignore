@@ -8,3 +8,6 @@ backend/.pytest_cache/
 node_modules/
 frontend/dist/
 frontend/.env
+
+# Local Claude Code notes and settings -- personal, not part of the project.
+.claude/

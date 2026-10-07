@@ -27,10 +27,9 @@ module NightcordWeb
         return @app.call(env)
       end
 
-      # CORS doesn't cover WebSockets: without this, any other website could
-      # open a chat socket riding a visitor's session cookie. Browsers always
-      # send Origin here; a missing one means a non-browser client (e.g. the
-      # canary), which has no visitor's cookie to ride.
+      # CORS doesn't cover WebSockets, so any other website could otherwise
+      # open chat sockets from visitors' browsers. Browsers always send Origin
+      # here; a missing one means a non-browser client (e.g. the canary).
       origin = env["HTTP_ORIGIN"]
       return refuse(403, "Origin not allowed.") if origin && !@allowed_origins.include?(origin)
 
@@ -52,7 +51,6 @@ module NightcordWeb
       # Origin is checked above and deliberately not forwarded -- FastAPI
       # treats a missing Origin as a trusted non-browser caller, which this is.
       headers = [["x-forwarded-for", ClientIp.from_env(env)]]
-      headers << ["cookie", env["HTTP_COOKIE"]] if env["HTTP_COOKIE"]
       # The canary's gate bypass travels as a header, never in the URL.
       headers << ["x-canary-token", env["HTTP_X_CANARY_TOKEN"]] if env["HTTP_X_CANARY_TOKEN"]
 

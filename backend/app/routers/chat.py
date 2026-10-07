@@ -1,3 +1,4 @@
+import asyncio
 import json
 import time
 from collections import deque
@@ -6,7 +7,7 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketException, status
 from sqlalchemy.orm import Session
 
 from app import gate
-from app.auth import ACCESS_TOKEN_COOKIE_NAME, decode_user_from_token
+from app.auth import user_from_token
 from app.config import settings
 from app.connection_manager import manager
 from app.database import get_db
@@ -84,12 +85,35 @@ def parse_message_content(raw: str | None) -> str | None:
     return content
 
 
-def get_user_from_websocket(websocket: WebSocket, db: Session) -> User:
-    token = websocket.cookies.get(ACCESS_TOKEN_COOKIE_NAME)
-    user = decode_user_from_token(token, db) if token else None
-    if user is None:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or missing session")
-    return user
+# Browsers can't put an Authorization header on a WebSocket, so the Clerk
+# session token arrives as the first message instead: {"type":"auth","token":...}.
+# (Not in the URL: URLs end up in logs.)
+AUTH_TIMEOUT_SECONDS = 5.0
+
+
+async def authenticate(websocket: WebSocket, db: Session) -> User | None:
+    try:
+        frame = await asyncio.wait_for(websocket.receive(), timeout=AUTH_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        return None
+    if frame["type"] != "websocket.receive":
+        return None
+    try:
+        data = json.loads(frame.get("text") or "")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("type") != "auth" or not isinstance(data.get("token"), str):
+        return None
+    return user_from_token(data["token"], db)
+
+
+async def refuse(websocket: WebSocket, reason: str) -> None:
+    """Closes an accepted socket with a reason the frontend can act on
+    (e.g. "gate-closed:<tz>" shows the closed screen)."""
+    try:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=reason)
+    except RuntimeError:
+        pass  # the client already went away
 
 
 @router.websocket("/ws/rooms/{room_id}")
@@ -102,11 +126,18 @@ async def room_chat(
     if not origin_allowed(websocket):
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed")
 
-    user = get_user_from_websocket(websocket, db)
+    # Accepted first so every refusal below is a close frame with a reason the
+    # browser can read, rather than a bare failed handshake.
+    await websocket.accept()
 
-    room = db.get(Room, room_id)
-    if not room:
-        raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Room not found")
+    user = await authenticate(websocket, db)
+    if user is None:
+        await refuse(websocket, "unauthorized")
+        return
+
+    if not db.get(Room, room_id):
+        await refuse(websocket, "Room not found")
+        return
 
     # The canary token comes in a header, never the URL: URLs end up in
     # proxy and server logs. (The dev-only skip_gate stays a query param --
@@ -115,9 +146,10 @@ async def room_chat(
     if not (gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
         user_tz = user.timezone or gate.FALLBACK_TIMEZONE
         if not gate.is_night_in_timezone(user_tz):
-            raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason=f"gate-closed:{user_tz}")
+            await refuse(websocket, f"gate-closed:{user_tz}")
+            return
 
-    await manager.connect(room_id, websocket)
+    manager.connect(room_id, websocket)
     limiter = SendLimiter()
     # Whatever ends this loop -- a normal disconnect or an unexpected error --
     # the connection must come out of the room's broadcast list. A dead socket

@@ -23,11 +23,10 @@ class ProxyTest < Minitest::Test
 
   def test_forwards_the_request_without_the_api_prefix_and_returns_the_answer
     stub_request(:get, "http://backend.test/rooms/7/messages?limit=5")
-      .with(headers: { "Cookie" => "access_token=abc", "X-Requested-With" => "nightcord" })
+      .with(headers: { "Authorization" => "Bearer clerk-session-token" })
       .to_return(status: 200, body: '[{"id":1}]', headers: { "Content-Type" => "application/json" })
 
-    header "Cookie", "access_token=abc"
-    header "X-Requested-With", "nightcord"
+    header "Authorization", "Bearer clerk-session-token"
     get "/api/rooms/7/messages?limit=5"
 
     assert_equal 200, last_response.status
@@ -69,13 +68,24 @@ class ProxyTest < Minitest::Test
     assert_equal 200, last_response.status
   end
 
+  def test_forwards_the_clerk_session_token
+    stub_request(:get, "http://backend.test/rooms")
+      .with(headers: { "Authorization" => "Bearer clerk-session-token" })
+      .to_return(status: 200, body: "[]")
+
+    header "Authorization", "Bearer clerk-session-token"
+    get "/api/rooms"
+
+    assert_equal 200, last_response.status
+  end
+
   def test_does_not_forward_other_headers
     stub_request(:get, "http://backend.test/rooms")
-      .with { |request| !request.headers.key?("Origin") && !request.headers.key?("Authorization") }
+      .with { |request| !request.headers.key?("Origin") && !request.headers.key?("Cookie") }
       .to_return(status: 200, body: "[]")
 
     header "Origin", "https://evil.example"
-    header "Authorization", "Bearer something"
+    header "Cookie", "tracking=1"
     get "/api/rooms"
 
     assert_equal 200, last_response.status

@@ -1,167 +1,119 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.auth import (
-    DUMMY_PASSWORD_HASH,
-    clear_auth_cookie,
-    create_access_token,
-    email_domain,
-    get_current_user,
-    hash_password,
-    is_account_locked,
-    is_allowed_student_email,
-    is_breached_password,
-    record_failed_login,
-    record_successful_login,
-    require_csrf_header,
-    revoke_all_sessions,
-    set_auth_cookie,
-    verify_google_id_token,
-    verify_password,
-)
-from app.campus_time import lookup_school
+from app import clerk_auth
+from app.auth import bearer_scheme, email_domain, get_current_user, is_allowed_student_email, verified_claims
+from app.campus_time import SchoolLookup, find_school_ids, lookup_school
 from app.database import get_db
 from app.gate import resolve_signup_timezone
 from app.models import User
 from app.rate_limit import limiter
-from app.schemas import GoogleAuthRequest, LoginRequest, MessageResponse, UserCreate, UserOut
+from app.schemas import EmailCheck, EmailCheckOut, MessageResponse, SessionStart, UserOut
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+DISPLAY_NAME_MAX_LENGTH = User.__table__.c.display_name.type.length
+NOT_A_STUDENT_MESSAGE = "nightcord is for college students — please sign up with your school email address."
 
-@router.post("/signup", response_model=UserOut, status_code=status.HTTP_201_CREATED)
-@limiter.limit("5/hour")
-def signup(request: Request, response: Response, payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    school = lookup_school(email_domain(payload.email))
-    if not is_allowed_student_email(payload.email, school):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Signup requires a valid college student email address.",
-        )
 
-    if db.query(User).filter(User.email == payload.email).first():
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
-
-    if is_breached_password(payload.password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="That password has appeared in a known data breach. Please choose a different one.",
-        )
-
-    user = User(
-        email=payload.email,
-        hashed_password=hash_password(payload.password),
-        display_name=payload.display_name,
-        timezone=resolve_signup_timezone(school, payload.timezone),
+def clerk_unavailable() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail="Couldn't reach the sign-in service. Please try again.",
     )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    token = create_access_token(subject=user.email, token_version=user.token_version)
-    set_auth_cookie(response, token)
-    return user
 
 
-@router.post("/login", response_model=UserOut)
+@router.post("/session", response_model=UserOut)
 @limiter.limit("10/minute")
-def login(request: Request, response: Response, payload: LoginRequest, db: Session = Depends(get_db)) -> User:
-    user = db.query(User).filter(User.email == payload.email).first()
-    locked = user is not None and is_account_locked(user)
+def start_session(
+    request: Request,
+    payload: SessionStart,
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    """Called by the frontend after every Clerk sign-in or sign-up. Clerk has
+    already proven the student owns the email address; this decides whether
+    that address may use nightcord, and creates or links the nightcord
+    account for it.
+    """
+    if credentials is None:
+        clerk_auth.logger.warning("POST /auth/session arrived without a Clerk session token (no Authorization header).")
+    clerk_user_id = verified_claims(credentials)["sub"]
 
-    if user is not None and user.hashed_password is not None and not locked:
-        password_ok = verify_password(payload.password, user.hashed_password)
-    else:
-        # No real hash to check against (no such user, a Google-only account,
-        # or a locked-out account) -- verify against a dummy hash anyway so
-        # this path costs the same as a genuine wrong-password check. Without
-        # this, response timing alone would reveal which of those cases it is.
-        verify_password(payload.password, DUMMY_PASSWORD_HASH)
-        password_ok = False
+    try:
+        clerk_user = clerk_auth.get_user(clerk_user_id)
+    except clerk_auth.ClerkAPIError:
+        logger.exception("Clerk get_user failed")
+        raise clerk_unavailable()
 
-    if user is None or not password_ok:
-        if user is not None:
-            record_failed_login(user)
-            db.commit()
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password.",
-        )
+    if not clerk_user.email or not clerk_user.email_verified:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Verify your email address to join nightcord.")
 
-    record_successful_login(user)
-    db.commit()
-
-    token = create_access_token(subject=user.email, token_version=user.token_version)
-    set_auth_cookie(response, token)
-    return user
-
-
-@router.post("/google", response_model=UserOut)
-@limiter.limit("10/minute")
-def google_auth(request: Request, response: Response, payload: GoogleAuthRequest, db: Session = Depends(get_db)) -> User:
-    claims = verify_google_id_token(payload.credential)
-
-    email = claims.get("email")
-    if not email or not claims.get("email_verified"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Google did not return a verified email address.",
-        )
-
+    email = clerk_user.email
     school = lookup_school(email_domain(email))
     if not is_allowed_student_email(email, school):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Sign-in requires a valid college student email address.",
-        )
+        # Nobody else can use this Clerk account either, so don't leave it
+        # sitting in Clerk (and counting toward its user limits).
+        try:
+            clerk_auth.delete_user(clerk_user_id)
+        except clerk_auth.ClerkAPIError:
+            logger.exception("Clerk delete_user failed for a rejected sign-up")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=NOT_A_STUDENT_MESSAGE)
 
-    google_id = claims["sub"]
-    user = db.query(User).filter(User.google_id == google_id).first()
+    user = db.query(User).filter(User.clerk_user_id == clerk_user_id).first()
+    if user is None:
+        # An account from before Clerk (or from a deleted and re-created Clerk
+        # user) with the same address: Clerk has now verified this person owns
+        # it, so they inherit it -- name, timezone and messages.
+        user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
 
-    if not user:
-        user = db.query(User).filter(User.email == email).first()
-        if user and user.google_id and user.google_id != google_id:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered.")
-
-    if user:
-        user.google_id = google_id
-        if user.timezone is None:
-            user.timezone = resolve_signup_timezone(school, payload.timezone)
-    else:
+    if user is None:
+        name = clerk_user.full_name or email.split("@")[0]
         user = User(
             email=email,
-            hashed_password=None,
-            google_id=google_id,
-            # Google names can exceed the column; trim rather than fail the sign-in.
-            display_name=(claims.get("name") or email.split("@")[0])[:100],
+            clerk_user_id=clerk_user_id,
+            display_name=name[:DISPLAY_NAME_MAX_LENGTH],
             timezone=resolve_signup_timezone(school, payload.timezone),
         )
         db.add(user)
+    else:
+        user.clerk_user_id = clerk_user_id
+        if user.timezone is None:
+            user.timezone = resolve_signup_timezone(school, payload.timezone)
 
     db.commit()
     db.refresh(user)
-
-    token = create_access_token(subject=user.email, token_version=user.token_version)
-    set_auth_cookie(response, token)
     return user
 
 
-@router.post("/logout", response_model=MessageResponse, dependencies=[Depends(require_csrf_header)])
-def logout(response: Response) -> MessageResponse:
-    """Ends this browser's session only -- the token itself isn't revoked,
-    so a copy held elsewhere (e.g. another device) is unaffected. See
-    /auth/logout-all for actual server-side revocation.
+@router.post("/check-email", response_model=EmailCheckOut)
+@limiter.limit("30/minute")
+def check_email(request: Request, payload: EmailCheck) -> EmailCheckOut:
+    """Answers "could this address join?" while someone is still typing it
+    into the sign-up form, so a non-student is stopped before Clerk emails
+    them a code. It only reads the bundled school list (plus a DNS lookup for
+    an unknown .edu) -- no Clerk or campus-time calls -- and it says nothing
+    about whether an account exists. /auth/session still enforces the rule.
     """
-    clear_auth_cookie(response)
-    return MessageResponse(message="Logged out.")
+    school = SchoolLookup(found=bool(find_school_ids(email_domain(payload.email))), timezone=None)
+    allowed = is_allowed_student_email(payload.email, school)
+    return EmailCheckOut(allowed=allowed, message=None if allowed else NOT_A_STUDENT_MESSAGE)
 
 
-@router.post("/logout-all", response_model=MessageResponse, dependencies=[Depends(require_csrf_header)])
-def logout_all(response: Response, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> MessageResponse:
-    """Invalidates every token issued for this account, on every device,
-    by bumping token_version -- not just this browser's cookie.
+@router.post("/logout-all", response_model=MessageResponse)
+def logout_all(user: User = Depends(get_current_user)) -> MessageResponse:
+    """Ends every Clerk session for this account, on every device. (Signing
+    out of just this browser happens in Clerk on the frontend.)
     """
-    revoke_all_sessions(user)
-    db.commit()
-    clear_auth_cookie(response)
-    return MessageResponse(message="Logged out of all devices.")
+    try:
+        clerk_auth.revoke_all_sessions(user.clerk_user_id)
+    except clerk_auth.ClerkAPIError:
+        logger.exception("Clerk revoke_all_sessions failed")
+        raise clerk_unavailable()
+    return MessageResponse(message="Signed out of all devices.")

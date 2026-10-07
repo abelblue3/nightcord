@@ -1,15 +1,21 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, clearSession, getRoomMessages, connectRoomSocket, logout } from './api.js';
+import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
+import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
+import { loadingLine, setBusy } from './ui.js';
 
-if (requireAuth()) {
-  init();
-}
-// else: requireAuth already redirected to /index.html
+init();
 
 async function init() {
+  initConsentBanner();
+
+  const historyLoading = loadingLine('LOADING MESSAGES');
+  document.getElementById('chat-log').appendChild(historyLoading);
+
+  if (!(await requireAuth())) return; // already redirecting to the sign-in page
+
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const params = new URLSearchParams(window.location.search);
@@ -23,16 +29,7 @@ async function init() {
 
   document.getElementById('room-title').textContent = roomName.toUpperCase();
 
-  document.getElementById('logout-btn').addEventListener('click', async () => {
-    try {
-      await logout();
-    } catch {
-      // Sign out locally either way -- a failed request shouldn't strand someone.
-    } finally {
-      clearSession();
-      window.location.href = '/index.html';
-    }
-  });
+  document.getElementById('logout-btn').addEventListener('click', signOut);
 
   const chatLog = document.getElementById('chat-log');
   const errorBox = document.getElementById('error-box');
@@ -106,17 +103,19 @@ async function init() {
   async function loadHistory() {
     try {
       const messages = await getRoomMessages(roomId);
+      historyLoading.remove();
       for (const msg of messages) appendMessage(msg);
       showOrHideLoadEarlier(messages);
       return true;
     } catch (err) {
+      historyLoading.remove();
       handleHistoryError(err);
       return false;
     }
   }
 
   loadEarlierBtn.addEventListener('click', async () => {
-    loadEarlierBtn.disabled = true;
+    const restore = setBusy(loadEarlierBtn, 'LOADING...');
     try {
       const older = await getRoomMessages(roomId, { before: oldestMessageId });
       // Insert above what's shown without moving what the reader is looking at.
@@ -129,14 +128,26 @@ async function init() {
     } catch (err) {
       handleHistoryError(err);
     } finally {
-      loadEarlierBtn.disabled = false;
+      restore();
     }
   });
 
   let socket;
+  let reconnectTimer = null;
 
-  function connect() {
-    socket = connectRoomSocket(roomId);
+  // Reconnects after a dropped connection (network blip, server restart, or
+  // the server cutting off a flood of messages).
+  function scheduleReconnect(delayMs) {
+    if (reconnectTimer) return;
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null;
+      connect();
+    }, delayMs);
+  }
+
+  async function connect() {
+    setStatus('connecting…', '');
+    socket = await connectRoomSocket(roomId);
 
     socket.addEventListener('open', () => setStatus('connected', 'connected'));
 
@@ -151,7 +162,18 @@ async function init() {
         renderClosedScreen(document.querySelector('.screen'), gateClosedMatch[1]);
         return;
       }
-      setStatus('disconnected', 'disconnected');
+      if (event.reason === 'unauthorized') {
+        // The session ended (e.g. "log out of all devices" elsewhere).
+        signOut();
+        return;
+      }
+      if (event.reason === 'rate-limited') {
+        setStatus('you’re sending messages too fast — wait a moment', 'disconnected');
+        scheduleReconnect(5000);
+        return;
+      }
+      setStatus('disconnected — reconnecting…', 'disconnected');
+      scheduleReconnect(3000);
     });
 
     socket.addEventListener('error', () => setStatus('connection error', 'disconnected'));
@@ -163,7 +185,13 @@ async function init() {
   chatForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const content = chatInput.value.trim();
-    if (!content || socket?.readyState !== WebSocket.OPEN) return;
+    if (!content) return;
+    if (socket?.readyState !== WebSocket.OPEN) {
+      // Keep what they typed; say why it didn't send.
+      setStatus('not connected — reconnecting…', 'disconnected');
+      if (!socket || socket.readyState === WebSocket.CLOSED) scheduleReconnect(0);
+      return;
+    }
 
     socket.send(JSON.stringify({ content }));
     chatInput.value = '';
@@ -171,7 +199,7 @@ async function init() {
 
   const gateOpen = await loadHistory();
   if (gateOpen) {
-    connect();
+    await connect();
     if (currentUser?.timezone) {
       watchForClose(currentUser.timezone);
     }

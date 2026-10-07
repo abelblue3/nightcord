@@ -1,103 +1,22 @@
-import hashlib
-import secrets
-from datetime import datetime, timedelta, timezone
-
 import dns.exception
 import dns.resolver
-import httpx
-from fastapi import Cookie, Depends, Header, HTTPException, Response, status
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
+from app import clerk_auth
+from app.campus_time import SchoolLookup
 from app.config import settings
 from app.database import get_db
-from app.campus_time import SchoolLookup
-from app.models import User, as_utc
+from app.models import User
 
 MX_LOOKUP_TIMEOUT_SECONDS = 3.0
-PWNED_API_TIMEOUT_SECONDS = 2.0
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Every signed-in request carries `Authorization: Bearer <Clerk session token>`.
+# There is no cookie, so there's nothing for a cross-site request to ride on.
+bearer_scheme = HTTPBearer(auto_error=False)
 
-ACCESS_TOKEN_COOKIE_NAME = "access_token"
-
-# A hash of a password nobody has. Verifying against this on every login
-# failure path that doesn't have a real hash to check (no such user, a
-# Google-only account, or a locked-out account) burns the same bcrypt cost as
-# a genuine wrong-password attempt, so response timing can't be used to tell
-# those cases apart from the outside.
-DUMMY_PASSWORD_HASH = CryptContext(schemes=["bcrypt"]).hash(secrets.token_urlsafe(32))
-
-
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password: str, hashed_password: str | None) -> bool:
-    if hashed_password is None:
-        return False
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def is_account_locked(user: User) -> bool:
-    return user.lockout_until is not None and as_utc(user.lockout_until) > datetime.now(timezone.utc)
-
-
-def record_failed_login(user: User) -> None:
-    user.failed_login_attempts += 1
-    if user.failed_login_attempts >= settings.login_max_failed_attempts:
-        user.lockout_until = datetime.now(timezone.utc) + timedelta(minutes=settings.login_lockout_minutes)
-        user.failed_login_attempts = 0
-
-
-def record_successful_login(user: User) -> None:
-    user.failed_login_attempts = 0
-    user.lockout_until = None
-
-
-def revoke_all_sessions(user: User) -> None:
-    """Invalidates every token already issued for this account, not just the
-    one in the browser that called this -- bumping the version makes every
-    previously-issued JWT fail the `ver` check in decode_user_from_token,
-    regardless of how many devices/browsers hold a copy.
-    """
-    user.token_version += 1
-
-
-def _cookie_flags() -> dict:
-    # Any real deployed environment (prod, beta, ...) genuinely spans two
-    # different sites (Vercel <-> Railway), which requires SameSite=None
-    # (and therefore Secure) for the cookie to survive the cross-site hop.
-    # Local dev is same-site (just different localhost ports), so Lax
-    # without Secure works over plain http -- it's the only environment
-    # that gets the relaxed flags, everything else defaults secure.
-    is_secure_env = settings.environment != "development"
-    return {"httponly": True, "secure": is_secure_env, "samesite": "none" if is_secure_env else "lax"}
-
-
-def set_auth_cookie(response: Response, token: str) -> None:
-    response.set_cookie(
-        key=ACCESS_TOKEN_COOKIE_NAME,
-        value=token,
-        max_age=settings.access_token_expire_minutes * 60,
-        **_cookie_flags(),
-    )
-
-
-def clear_auth_cookie(response: Response) -> None:
-    response.delete_cookie(key=ACCESS_TOKEN_COOKIE_NAME, **_cookie_flags())
-
-
-def verify_google_id_token(credential: str) -> dict:
-    try:
-        return google_id_token.verify_oauth2_token(
-            credential, google_requests.Request(), settings.google_client_id
-        )
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Google credential.")
+NOT_LINKED_CODE = "not-linked"
 
 
 def has_valid_mx_record(domain: str) -> bool:
@@ -115,108 +34,67 @@ def has_valid_mx_record(domain: str) -> bool:
         return False
 
 
-def is_breached_password(password: str) -> bool:
-    """Checks the password against the Have I Been Pwned Pwned Passwords
-    corpus using k-anonymity: only a 5-character SHA-1 prefix is ever sent
-    over the network, shared by hundreds of unrelated hashes, so neither the
-    password nor its full hash leaves this server.
-
-    Fails open (treats the password as clean) on any network/API problem --
-    unlike has_valid_mx_record's fail-closed behavior above, an outage here
-    says nothing about whether the password itself is bad, so blocking every
-    signup over a third-party hiccup would be the wrong tradeoff.
-    """
-    sha1 = hashlib.sha1(password.encode("utf-8")).hexdigest().upper()
-    prefix, suffix = sha1[:5], sha1[5:]
-    try:
-        response = httpx.get(f"https://api.pwnedpasswords.com/range/{prefix}", timeout=PWNED_API_TIMEOUT_SECONDS)
-        response.raise_for_status()
-    except httpx.HTTPError:
-        return False
-    return any(line.partition(":")[0] == suffix for line in response.text.splitlines())
-
-
 def email_domain(email: str) -> str:
     return email.rsplit("@", 1)[-1].lower()
 
 
 def is_allowed_student_email(email: str, school: SchoolLookup) -> bool:
     """`school` is the lookup_school() result for this email's domain --
-    passed in so signup makes one round of campus-time calls, not two.
+    passed in so a sign-in makes one round of campus-time calls, not two.
     """
-    domain = email_domain(email)
+    # A domain that belongs to a school in the NCES directory is trusted
+    # whatever it ends in -- some real colleges use .org, .com, .us, ...
+    if school.found:
+        return True
 
+    # Anything else must be an allowed suffix (.edu by default -- only
+    # accredited institutions can register one) and must actually receive
+    # mail, which catches typos and nonexistent domains that end in .edu.
+    domain = email_domain(email)
     matches_allowed_suffix = any(
         domain == allowed.lstrip(".") or domain.endswith(allowed if allowed.startswith(".") else f".{allowed}")
         for allowed in settings.allowed_email_domain_list
     )
-    if not matches_allowed_suffix:
-        return False
-
-    # A domain we recognize as a real institution is trusted outright.
-    # Anything else still has to prove it can actually receive mail, which
-    # catches typos and nonexistent domains that happen to end in .edu.
-    if school.found:
-        return True
-
-    return has_valid_mx_record(domain)
+    return matches_allowed_suffix and has_valid_mx_record(domain)
 
 
-def create_access_token(subject: str, token_version: int) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.access_token_expire_minutes)
-    payload = {"sub": subject, "ver": token_version, "exp": expire}
-    return jwt.encode(payload, settings.secret_key, algorithm="HS256")
+def credentials_error() -> HTTPException:
+    return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
 
-def decode_user_from_token(token: str, db: Session) -> User | None:
-    """Shared by the HTTP cookie dependency and the WebSocket auth path so
-    the ver-claim revocation check can't drift between the two.
+def verified_claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
+    if credentials is None:
+        raise credentials_error()
+    try:
+        return clerk_auth.verify_session_token(credentials.credentials)
+    except clerk_auth.InvalidSessionToken as error:
+        clerk_auth.logger.warning("Rejected a Clerk session token: %s", error)
+        raise credentials_error()
+
+
+def user_from_token(token: str, db: Session) -> User | None:
+    """Shared by the HTTP dependency and the chat WebSocket, so both check
+    tokens the same way.
     """
     try:
-        payload = jwt.decode(token, settings.secret_key, algorithms=["HS256"])
-    except JWTError:
+        claims = clerk_auth.verify_session_token(token)
+    except clerk_auth.InvalidSessionToken as error:
+        clerk_auth.logger.warning("Rejected a Clerk session token on a chat socket: %s", error)
         return None
-
-    email = payload.get("sub")
-    if email is None:
-        return None
-
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        return None
-
-    if payload.get("ver") != user.token_version:
-        return None
-    return user
+    return db.query(User).filter(User.clerk_user_id == claims["sub"]).first()
 
 
 def get_current_user(
-    access_token: str | None = Cookie(default=None),
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-    )
-    if access_token is None:
-        raise credentials_exception
-    user = decode_user_from_token(access_token, db)
+    claims = verified_claims(credentials)
+    user = db.query(User).filter(User.clerk_user_id == claims["sub"]).first()
     if user is None:
-        raise credentials_exception
+        # Signed in with Clerk, but POST /auth/session hasn't created or
+        # linked the nightcord account yet. The frontend does that and retries.
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"message": "Finish signing in to nightcord.", "code": NOT_LINKED_CODE},
+        )
     return user
-
-
-def require_csrf_header(x_requested_with: str | None = Header(default=None)) -> None:
-    """Cookie-based auth means the browser attaches credentials to any
-    request to this API, cross-site or not -- SameSite=None in production
-    removes the protection SameSite=Lax/Strict would otherwise give for
-    free. Strict CORS + JSON-only bodies already block the two classic CSRF
-    vectors (a script-driven cross-origin fetch fails CORS preflight; a bare
-    cross-site <form> POST can't produce a JSON body FastAPI will parse) --
-    this header is a deliberate extra layer in case either of those is ever
-    loosened without someone noticing the CSRF implication. A third-party
-    page can't set custom headers on a simple form post, so this is cheap
-    to enforce and cheap for the frontend to satisfy.
-    """
-    if x_requested_with != "nightcord":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Missing or invalid request header.")

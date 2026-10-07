@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -17,13 +17,13 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=True)
-    google_id: Mapped[str] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    # Set the first time this person signs in through Clerk. The database still
+    # holds the pre-Clerk columns (hashed_password, google_id,
+    # failed_login_attempts, lockout_until, token_version) so a rollback stays
+    # possible; nothing reads them, and a later migration drops them.
+    clerk_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     display_name: Mapped[str] = mapped_column(String(100), nullable=False)
     timezone: Mapped[str] = mapped_column(String(64), nullable=True)
-    failed_login_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    lockout_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    token_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     messages: Mapped[list["Message"]] = relationship(back_populates="author")
@@ -58,3 +58,19 @@ class Message(Base):
         chat history shows the same names live messages do.
         """
         return self.author.display_name
+
+
+class ConsentRecord(Base):
+    """One row per cookie/data choice a signed-in student makes -- never
+    updated, so the history shows what they agreed to and when (proof of
+    consent). Essential storage isn't recorded: it isn't optional.
+    """
+
+    __tablename__ = "consent_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True, nullable=False)
+    policy_version: Mapped[str] = mapped_column(String(20), nullable=False)
+    preferences: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    diagnostics: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

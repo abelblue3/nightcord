@@ -23,12 +23,19 @@
         <div class="chat-log" id="chat-log">
           <button type="button" class="btn btn-small load-earlier" id="load-earlier" hidden>Load earlier</button>
         </div>
-        <div class="connection-status" id="connection-status">connecting…</div>
+        <div class="connection-status" id="connection-status" role="status" aria-live="polite">connecting…</div>
         <form class="chat-input-row" id="chat-form">
           <input type="text" id="chat-input" autocomplete="off" placeholder="say something…" maxlength="2000" />
           <button type="submit" class="btn btn-primary" id="chat-send">Send</button>
         </form>
       </div>
+      <footer class="site-footer">
+        <a href="/terms.html">Terms</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy.html">Privacy</a>
+        <span aria-hidden="true">·</span>
+        <a href="#" data-cookie-settings>Cookie settings</a>
+      </footer>
     </div>
 
     <script type="module" src="/src/chat.js"></script>

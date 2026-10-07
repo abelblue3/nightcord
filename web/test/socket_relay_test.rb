@@ -82,7 +82,7 @@ class SocketRelayTest < Minitest::Test
     Async::WebSocket::Client.connect(Async::HTTP::Endpoint.parse(url), headers: headers)
   end
 
-  def test_relays_messages_both_ways_and_forwards_the_session_cookie
+  def test_relays_messages_both_ways
     with_servers do |base|
       socket = connect(
         "#{base}/api/ws/rooms/1?skip_gate=1",
@@ -90,7 +90,9 @@ class SocketRelayTest < Minitest::Test
       )
 
       arrived = socket.read.parse
-      assert_equal "access_token=abc", arrived[:cookie]
+      # Chat signs in with its first message (a Clerk token), not a cookie,
+      # so cookies stay on this side.
+      assert_nil arrived[:cookie]
       assert_equal "tok", arrived[:canary_token]
       assert_equal "/ws/rooms/1", arrived[:path]
       assert_equal "skip_gate=1", arrived[:query]

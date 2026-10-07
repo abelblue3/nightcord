@@ -1,16 +1,16 @@
 import pytest
 from starlette.requests import Request
 
-from app.auth import create_access_token
 from app.rate_limit import client_ip, user_or_ip_key
+from tests.conftest import make_token
 
 
-def _request(forwarded_for=None, socket_host="10.0.0.5", cookies=None):
+def _request(forwarded_for=None, socket_host="10.0.0.5", bearer=None):
     headers = []
     if forwarded_for is not None:
         headers.append((b"x-forwarded-for", forwarded_for.encode()))
-    if cookies:
-        headers.append((b"cookie", "; ".join(f"{k}={v}" for k, v in cookies.items()).encode()))
+    if bearer:
+        headers.append((b"authorization", f"Bearer {bearer}".encode()))
     return Request({"type": "http", "headers": headers, "client": (socket_host, 12345)})
 
 
@@ -45,11 +45,10 @@ def test_falls_back_to_the_socket_address_without_a_usable_header():
 
 
 def test_signed_in_requests_are_keyed_by_account():
-    token = create_access_token(subject="student@university.edu", token_version=0)
-    key = user_or_ip_key(_request("203.0.113.9", cookies={"access_token": token}))
-    assert key == "user:student@university.edu"
+    key = user_or_ip_key(_request("203.0.113.9", bearer=make_token("user_abc")))
+    assert key == "user:user_abc"
 
 
 def test_a_forged_token_falls_back_to_the_ip():
-    key = user_or_ip_key(_request("203.0.113.9", cookies={"access_token": "not.a.real-token"}))
+    key = user_or_ip_key(_request("203.0.113.9", bearer="not.a.real-token"))
     assert key == "203.0.113.9"

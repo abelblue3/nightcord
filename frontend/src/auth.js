@@ -1,26 +1,29 @@
 import './sentry.js';
 import './style.css';
-import { signup, login, saveSession, getUser, googleAuth } from './api.js';
+import { loadClerk } from './clerk.js';
+import { checkSignupEmail, clearSession, startSession } from './api.js';
 import { getBrowserTimezone } from './nightGate.js';
-import { renderGoogleButton } from './googleAuth.js';
+import { guardSignupEmail } from './signupEmailGuard.js';
+import { initConsentBanner } from './consentBanner.js';
+import { loadingLine } from './ui.js';
 
-// Login/signup are never time-gated -- only room access is. See the
-// handoff doc's Decisions for why (in short: gating the account itself
-// serves no purpose, and school-timezone lookup only has an email to work
-// with once someone's actually signing up).
+// Login/signup are never time-gated -- only room access is. Clerk runs the
+// screens (including the emailed code that proves the student owns the
+// address); this page then asks the backend to link that sign-in to a
+// nightcord account, which is where the college-email rule is enforced.
+
+// Clerk may reload this page after signing someone in or out, so a message
+// from a refused sign-in is carried across the reload.
+const PENDING_ERROR_KEY = 'nightcord_auth_error';
+
 init();
 
-function init() {
-  if (getUser()) {
-    window.location.href = '/rooms.html';
-    return;
-  }
+async function init() {
+  initConsentBanner();
 
-  const tabLogin = document.getElementById('tab-login');
-  const tabSignup = document.getElementById('tab-signup');
-  const loginForm = document.getElementById('login-form');
-  const signupForm = document.getElementById('signup-form');
   const errorBox = document.getElementById('error-box');
+  const mountPoint = document.getElementById('clerk-auth');
+  mountPoint.replaceChildren(loadingLine('LOADING'));
 
   function showError(message) {
     errorBox.textContent = message;
@@ -32,68 +35,90 @@ function init() {
     errorBox.classList.remove('visible');
   }
 
-  function showTab(which) {
-    clearError();
-    const isLogin = which === 'login';
-    tabLogin.classList.toggle('active', isLogin);
-    tabSignup.classList.toggle('active', !isLogin);
-    loginForm.style.display = isLogin ? 'block' : 'none';
-    signupForm.style.display = isLogin ? 'none' : 'block';
+  const pending = sessionStorage.getItem(PENDING_ERROR_KEY);
+  if (pending) {
+    sessionStorage.removeItem(PENDING_ERROR_KEY);
+    showError(pending);
   }
 
-  tabLogin.addEventListener('click', () => showTab('login'));
-  tabSignup.addEventListener('click', () => showTab('signup'));
-
-  async function afterAuth(user) {
-    saveSession(user);
-    window.location.href = '/rooms.html';
+  let clerk;
+  try {
+    clerk = await loadClerk({ withUi: true }); // this page shows Clerk's screens
+  } catch (err) {
+    console.error(err);
+    mountPoint.replaceChildren();
+    showError(`Sign-in is unavailable right now (${err.message}). Please try again in a moment.`);
+    return;
   }
 
-  renderGoogleButton(document.getElementById('google-signin-btn'), async (credential) => {
-    clearError();
+  let entering = false;
+  const signingIn = loadingLine('SIGNING YOU IN');
+
+  // Links the Clerk sign-in to a nightcord account, then goes to the rooms.
+  // Returns false (and signs back out) if the backend refuses it -- e.g. not
+  // a .edu address.
+  async function enter() {
+    if (entering || !clerk.user) return true;
+    entering = true;
+    // Hide (not clear) Clerk's screen -- it may be needed again if refused.
+    mountPoint.hidden = true;
+    mountPoint.before(signingIn);
     try {
-      const user = await googleAuth(credential, getBrowserTimezone());
-      await afterAuth(user);
+      await startSession(getBrowserTimezone());
+      window.location.href = '/rooms.html';
+      return true;
     } catch (err) {
+      signingIn.remove();
+      mountPoint.hidden = false;
+      clearSession();
+      sessionStorage.setItem(PENDING_ERROR_KEY, err.message);
       showError(err.message);
+      await clerk.signOut();
+      entering = false;
+      return false;
     }
-  });
+  }
 
-  loginForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearError();
-    const submitBtn = document.getElementById('login-submit');
-    submitBtn.disabled = true;
+  if (clerk.user && (await enter())) return;
 
-    const email = document.getElementById('login-email').value.trim();
-    const password = document.getElementById('login-password').value;
+  // Clerk's "Don't have an account? Sign up" / "Already have an account? Sign
+  // in" links navigate to signUpUrl / signInUrl; ?mode=signup tells this page
+  // which of its two screens to show.
+  function urlForMode(mode) {
+    const params = new URLSearchParams(window.location.search);
+    if (mode === 'signup') params.set('mode', 'signup');
+    else params.delete('mode');
+    const query = params.toString();
+    return `/index.html${query ? `?${query}` : ''}`;
+  }
 
-    try {
-      const user = await login({ email, password });
-      await afterAuth(user);
-    } catch (err) {
-      showError(err.message);
-    } finally {
-      submitBtn.disabled = false;
+  function showMode(mode) {
+    mountPoint.replaceChildren(); // clears the loading line; Clerk renders here
+    const links = {
+      signInUrl: urlForMode('login'),
+      signUpUrl: urlForMode('signup'),
+      fallbackRedirectUrl: '/index.html',
+    };
+    if (mode === 'signup') {
+      clerk.mountSignUp(mountPoint, { ...links, signInFallbackRedirectUrl: '/index.html' });
+    } else {
+      clerk.mountSignIn(mountPoint, { ...links, signUpFallbackRedirectUrl: '/index.html' });
     }
-  });
+  }
 
-  signupForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    clearError();
-    const submitBtn = document.getElementById('signup-submit');
-    submitBtn.disabled = true;
+  // Attached before Clerk's screen mounts, so its submit check runs first.
+  guardSignupEmail(mountPoint, { checkEmail: checkSignupEmail, showError, clearError });
 
-    const displayName = document.getElementById('signup-name').value.trim();
-    const email = document.getElementById('signup-email').value.trim();
-    const password = document.getElementById('signup-password').value;
+  try {
+    showMode(new URLSearchParams(window.location.search).get('mode') === 'signup' ? 'signup' : 'login');
+  } catch (err) {
+    console.error(err);
+    showError(`Couldn't show the sign-in form: ${err.message}`);
+    return;
+  }
 
-    try {
-      const user = await signup({ email, password, displayName, timezone: getBrowserTimezone() });
-      await afterAuth(user);
-    } catch (err) {
-      showError(err.message);
-      submitBtn.disabled = false;
-    }
+  // Signing in without a page reload (e.g. entering the emailed code).
+  clerk.addListener(({ user }) => {
+    if (user) enter();
   });
 }

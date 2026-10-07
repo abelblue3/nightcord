@@ -117,56 +117,29 @@ def test_canary_bypass_inactive_when_not_configured(monkeypatch):
     assert canary_bypass_active(None) is False
 
 
-# --- signup / Google auth store the resolved timezone ---
+# --- first sign-in stores the resolved timezone ---
 
 
-def test_signup_stores_institution_timezone(client, db_session):
-    client.post(
-        "/auth/signup",
-        json={"email": "student@harvard.edu", "password": "correct-horse-battery", "display_name": "H Student"},
-    )
+def test_first_sign_in_stores_institution_timezone(client, db_session, sign_in):
+    sign_in("student@harvard.edu")
     user = db_session.query(User).filter(User.email == "student@harvard.edu").first()
     assert user.timezone == "America/New_York"
 
 
-def test_signup_stores_client_fallback_timezone_for_unknown_school(client, db_session):
-    client.post(
-        "/auth/signup",
-        json={
-            "email": "student@totally-unknown-school.edu",
-            "password": "correct-horse-battery",
-            "display_name": "Unknown Student",
-            "timezone": "America/Denver",
-        },
-    )
+def test_first_sign_in_stores_client_fallback_timezone_for_unknown_school(client, db_session, sign_in):
+    sign_in("student@totally-unknown-school.edu", timezone="America/Denver")
     user = db_session.query(User).filter(User.email == "student@totally-unknown-school.edu").first()
     assert user.timezone == "America/Denver"
-
-
-def test_google_auth_stores_institution_timezone(client, db_session, monkeypatch):
-    monkeypatch.setattr(
-        "app.routers.auth.verify_google_id_token",
-        lambda credential: {
-            "email": "student@harvard.edu",
-            "email_verified": True,
-            "sub": "google-sub-tz-test",
-            "name": "H Student",
-        },
-    )
-    client.post("/auth/google", json={"credential": "fake-credential"})
-    user = db_session.query(User).filter(User.email == "student@harvard.edu").first()
-    assert user.timezone == "America/New_York"
 
 
 # --- server-side enforcement on rooms/chat ---
 
 
 @pytest.fixture()
-def logged_in_gate_user(client):
-    client.post(
-        "/auth/signup",
-        json={"email": "gateuser@university.edu", "password": "correct-horse-battery", "display_name": "Gate User"},
-    )
+def logged_in_gate_user(sign_in):
+    # university.edu isn't a known school and no browser timezone is sent,
+    # so this account falls back to UTC.
+    sign_in("gateuser@university.edu")
 
 
 def test_rooms_accessible_when_night(client, logged_in_gate_user):
@@ -219,42 +192,45 @@ def test_create_room_and_messages_also_gated(client, logged_in_gate_user, monkey
     assert client.get(f"/rooms/{room['id']}/messages").status_code == 403
 
 
-def test_websocket_rejects_when_gate_closed(client, logged_in_gate_user, monkeypatch):
+def test_websocket_rejects_when_gate_closed(client, logged_in_gate_user, room_socket, monkeypatch):
     room = client.post("/rooms", json={"name": "gate-ws-closed-room"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
 
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(f"/ws/rooms/{room['id']}"):
-            pass
+    with room_socket(room["id"]) as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    # The reason carries the timezone, so the browser can show the countdown.
+    assert closed.value.reason == "gate-closed:UTC"
 
 
-def test_websocket_dev_bypass_allows_connection_when_closed(client, logged_in_gate_user, monkeypatch):
+def test_websocket_dev_bypass_allows_connection_when_closed(client, logged_in_gate_user, room_socket, monkeypatch):
     room = client.post("/rooms", json={"name": "gate-ws-bypass-room"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "development")
 
-    with client.websocket_connect(f"/ws/rooms/{room['id']}?skip_gate=1") as ws:
+    with room_socket(room["id"], query="?skip_gate=1") as ws:
         ws.send_json({"content": "hello despite closed gate"})
         received = ws.receive_json()
     assert received["content"] == "hello despite closed gate"
 
 
-def test_websocket_canary_bypass_uses_a_header(client, logged_in_gate_user, monkeypatch):
+def test_websocket_canary_bypass_uses_a_header(client, logged_in_gate_user, room_socket, monkeypatch):
     room = client.post("/rooms", json={"name": "gate-ws-canary-room"}).json()
 
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.canary_bypass_token", "canary-secret")
 
-    with client.websocket_connect(f"/ws/rooms/{room['id']}", headers={"X-Canary-Token": "canary-secret"}) as ws:
+    with room_socket(room["id"], headers={"X-Canary-Token": "canary-secret"}) as ws:
         ws.send_json({"content": "canary ping"})
         assert ws.receive_json()["content"] == "canary ping"
 
     # The old query-string form no longer works -- tokens in URLs end up in logs.
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(f"/ws/rooms/{room['id']}?canary_token=canary-secret"):
-            pass
+    with room_socket(room["id"], query="?canary_token=canary-secret") as ws:
+        with pytest.raises(WebSocketDisconnect) as closed:
+            ws.receive_json()
+    assert closed.value.reason.startswith("gate-closed:")
 
 
 def test_canary_bypass_rejects_a_near_miss(monkeypatch):

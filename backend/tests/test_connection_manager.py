@@ -19,21 +19,22 @@ def run(coro):
     return asyncio.run(coro)
 
 
-def test_connect_accepts_and_tracks_connection():
+def test_connect_tracks_an_already_accepted_connection():
     manager = ConnectionManager()
     ws = FakeWebSocket()
 
-    run(manager.connect(room_id=1, websocket=ws))
+    manager.connect(room_id=1, websocket=ws)
 
-    assert ws.accepted is True
+    # The chat route accepts (and authenticates) before registering.
+    assert ws.accepted is False
     assert manager.active_connections[1] == [ws]
 
 
 def test_broadcast_sends_to_all_connections_in_room():
     manager = ConnectionManager()
     ws1, ws2 = FakeWebSocket(), FakeWebSocket()
-    run(manager.connect(room_id=1, websocket=ws1))
-    run(manager.connect(room_id=1, websocket=ws2))
+    manager.connect(room_id=1, websocket=ws1)
+    manager.connect(room_id=1, websocket=ws2)
 
     run(manager.broadcast(1, {"content": "hey"}))
 
@@ -44,8 +45,8 @@ def test_broadcast_sends_to_all_connections_in_room():
 def test_broadcast_does_not_leak_across_rooms():
     manager = ConnectionManager()
     ws_room1, ws_room2 = FakeWebSocket(), FakeWebSocket()
-    run(manager.connect(room_id=1, websocket=ws_room1))
-    run(manager.connect(room_id=2, websocket=ws_room2))
+    manager.connect(room_id=1, websocket=ws_room1)
+    manager.connect(room_id=2, websocket=ws_room2)
 
     run(manager.broadcast(1, {"content": "only for room 1"}))
 
@@ -56,7 +57,7 @@ def test_broadcast_does_not_leak_across_rooms():
 def test_disconnect_removes_connection_and_cleans_up_empty_room():
     manager = ConnectionManager()
     ws = FakeWebSocket()
-    run(manager.connect(room_id=1, websocket=ws))
+    manager.connect(room_id=1, websocket=ws)
 
     manager.disconnect(1, ws)
 
@@ -77,8 +78,8 @@ class DeadWebSocket(FakeWebSocket):
 def test_broadcast_drops_a_dead_connection_and_still_delivers_to_the_rest():
     manager = ConnectionManager()
     dead, alive = DeadWebSocket(), FakeWebSocket()
-    run(manager.connect(room_id=1, websocket=dead))
-    run(manager.connect(room_id=1, websocket=alive))
+    manager.connect(room_id=1, websocket=dead)
+    manager.connect(room_id=1, websocket=alive)
 
     run(manager.broadcast(1, {"content": "hey"}))
 

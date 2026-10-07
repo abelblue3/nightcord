@@ -478,3 +478,266 @@ a {
   letter-spacing: 2px;
   font-variant-numeric: tabular-nums;
 }
+
+/* --- Clerk sign-in / sign-up (index.html) --- */
+/* Clerk's card and buttons reuse .panel and .btn (see appearance in clerk.js);
+   these rules give its inputs and small parts the same pixel style. The
+   .clerk-auth prefix outranks Clerk's own single-class styles. */
+
+.clerk-auth {
+  width: 100%;
+  max-width: 480px;
+  display: flex;
+  justify-content: center;
+}
+
+/* (The card's width is set in clerk.js -- Clerk's own sizing rules outrank
+   stylesheet ones.) */
+.clerk-auth .cl-rootBox,
+.clerk-auth .cl-cardBox {
+  box-shadow: none;
+  border-radius: 0;
+}
+
+.clerk-auth .cl-formFieldInput {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  border: var(--border-w) solid var(--ink);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.clerk-auth .cl-formFieldInput:focus {
+  outline: 3px solid var(--primary);
+  outline-offset: 0;
+}
+
+/* Field labels ("Email address or username"), the Google/Microsoft buttons,
+   and the "Secured by" / "Development mode" footer all share one font and
+   size, so they read like the rest of the form. */
+.clerk-auth {
+  --clerk-text-size: 1.1rem;
+}
+
+.clerk-auth .cl-formFieldLabel,
+.clerk-auth .cl-formFieldErrorText,
+.clerk-auth .cl-formFieldCheckboxLabel,
+.clerk-auth .cl-socialButtonsBlockButtonText,
+.clerk-auth .cl-footer :is(p, span, a),
+.clerk-auth [data-clerk-dev-mode-notice] {
+  font-family: var(--font-body);
+  font-size: var(--clerk-text-size);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+/* The main Continue button stays in the pixel display font, like the site's
+   other buttons. */
+.clerk-auth .cl-formButtonPrimary {
+  font-family: var(--font-display);
+}
+
+.clerk-auth .cl-socialButtonsBlockButtonText {
+  color: var(--ink); /* the site's black (light text in dark mode) */
+}
+
+.clerk-auth .clerk-social-button {
+  border: var(--border-w) solid var(--ink);
+  border-radius: 0;
+  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--panel);
+  color: var(--ink);
+}
+
+.clerk-auth .clerk-social-button:hover {
+  background: var(--panel-hover);
+}
+
+.clerk-auth .cl-headerTitle {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--ink);
+}
+
+.clerk-auth .cl-footer {
+  background: transparent;
+}
+
+/* --- loading and form error states --- */
+
+.loading-line {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  text-align: center;
+  margin: 16px 0;
+}
+
+.field.has-error input {
+  border-color: var(--danger);
+}
+
+.field-error {
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  color: var(--danger);
+  margin: 4px 0 0;
+}
+
+/* --- footer --- */
+
+.site-footer {
+  margin-top: auto;
+  padding-top: 32px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  font-family: var(--font-body);
+  font-size: 1.05rem;
+  color: var(--ink-soft);
+}
+
+.site-footer a {
+  color: var(--ink-soft);
+}
+
+/* --- cookie banner and settings --- */
+
+.consent-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: calc(100% - 32px);
+  max-width: 720px;
+  z-index: 1000;
+  padding: 16px 20px;
+}
+
+/* Keep the page's last lines reachable above the banner. */
+body:has(.consent-banner) {
+  padding-bottom: 160px;
+}
+
+.consent-text {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+  line-height: 1.3;
+}
+
+.consent-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+/* Accept and Reject are deliberately the same size and weight. */
+.consent-actions .btn {
+  flex: 1 1 140px;
+}
+
+.consent-dialog {
+  max-width: 560px;
+  color: var(--ink);
+}
+
+.consent-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.consent-dialog h2 {
+  margin-bottom: 16px;
+}
+
+.consent-category {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  cursor: pointer;
+}
+
+.consent-category input {
+  width: 20px;
+  height: 20px;
+  margin-top: 2px;
+  accent-color: var(--primary);
+  flex: none;
+}
+
+.consent-category strong {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.consent-detail {
+  display: block;
+  font-size: 1.05rem;
+  line-height: 1.3;
+  color: var(--ink-soft);
+}
+
+/* --- legal pages --- */
+
+.legal {
+  max-width: 720px;
+  line-height: 1.4;
+}
+
+.legal h1 {
+  margin-bottom: 4px;
+}
+
+.legal h2 {
+  margin: 24px 0 8px;
+}
+
+.legal p,
+.legal li,
+.legal td,
+.legal th {
+  font-size: 1.15rem;
+}
+
+.legal ul {
+  padding-left: 20px;
+}
+
+.legal li {
+  margin-bottom: 6px;
+}
+
+.legal-meta {
+  color: var(--ink-soft);
+  margin-top: 0;
+}
+
+.draft-notice {
+  border: var(--border-w) dashed var(--danger);
+  color: var(--danger);
+  padding: 8px 12px;
+  margin: 0 0 16px;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.legal table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.legal th,
+.legal td {
+  border: 2px solid var(--ink);
+  padding: 6px 8px;
+  text-align: left;
+  vertical-align: top;
+}
