@@ -23,16 +23,7 @@
         <div class="video-bar">
           <button type="button" class="btn btn-small" id="video-join">Join video</button>
         </div>
-        <section class="video-panel" id="video-panel" aria-label="Video call" hidden>
-          <div id="video-layer"></div>
-          <div class="video-controls">
-            <button type="button" class="btn btn-small video-switch" id="video-camera" aria-pressed="false">Camera</button>
-            <button type="button" class="btn btn-small video-switch" id="video-mic" aria-pressed="false">Mic</button>
-            <button type="button" class="btn btn-small" id="video-leave">Leave</button>
-          </div>
-          <p class="video-hint">Your browser will ask to use your camera or mic. Nothing is shared until you allow it.</p>
-          <p class="video-notice" id="video-notice" role="status" aria-live="polite"></p>
-        </section>
+        <div id="video-layer" aria-label="Video call"></div>
         <div id="chat-content">
           <div class="chat-log" id="chat-log">
             <button type="button" class="btn btn-small load-earlier" id="load-earlier" hidden>Load earlier</button>

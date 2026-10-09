@@ -23,6 +23,7 @@ function openChatWindow(title, taskbar) {
   const win = createWindow({
     title,
     className: 'chat-window',
+    resize: 'free',
     at: { left: spot.left, top: spot.top },
     onHide: () => {
       taskbarButton = document.createElement('button');
@@ -183,13 +184,8 @@ async function init() {
 
   const video = initVideo(roomId, {
     joinButton: document.getElementById('video-join'),
-    panel: document.getElementById('video-panel'),
     layer: document.getElementById('video-layer'),
     taskbar,
-    cameraButton: document.getElementById('video-camera'),
-    micButton: document.getElementById('video-mic'),
-    leaveButton: document.getElementById('video-leave'),
-    notice: document.getElementById('video-notice'),
     onError: handleHistoryError, // the same closed-screen / error-box handling
   });
 
