@@ -26,7 +26,7 @@ describe('a floating window', () => {
   it('shows its title in the title bar, with the three title buttons', () => {
     expect(titlebar().textContent).toContain('Sam');
     expect(button('Minimize Sam')).not.toBeNull();
-    expect(button('Make Sam bigger')).not.toBeNull();
+    expect(button('Maximize Sam')).not.toBeNull();
     expect(button('Hide Sam')).not.toBeNull();
   });
 
@@ -65,10 +65,29 @@ describe('a floating window', () => {
     expect(win.element.classList.contains('is-minimized')).toBe(false);
   });
 
-  it('switches between small and large', () => {
-    button('Make Sam bigger').click();
-    expect(win.element.classList.contains('is-large')).toBe(true);
-    expect(button('Make Sam smaller')).not.toBeNull();
+  it('maximizes, and restores its previous size and spot', () => {
+    win.element.style.width = '300px';
+    const before = position(win);
+
+    button('Maximize Sam').click();
+    expect(win.element.style.width).not.toBe('300px');
+
+    button('Restore Sam size').click();
+    expect(win.element.style.width).toBe('300px');
+    expect(position(win)).toEqual(before);
+  });
+
+  it('can put extra buttons before _ □ ×, and give × another job', () => {
+    const extra = document.createElement('button');
+    extra.textContent = 'mic';
+    const leave = vi.fn();
+    const own = createWindow({ title: 'You', extraButtons: [extra], close: { label: 'Leave video call', action: leave } });
+
+    const titleButtons = [...own.element.querySelectorAll('.retro-title-buttons > button')];
+    expect(titleButtons[0]).toBe(extra);
+    own.element.querySelector('[aria-label="Leave video call"]').click();
+    expect(leave).toHaveBeenCalled();
+    expect(own.element.hidden).toBe(false);
   });
 
   it('hides, tells its owner, and shows again', () => {
@@ -87,6 +106,53 @@ describe('a floating window', () => {
     expect(chat.element.style.top).toBe('120px');
     expect(chat.element.classList.contains('chat-window')).toBe(true);
     expect(chat.element.classList.contains('retro-window')).toBe(true);
+  });
+
+  it('resizes freely from the corner grip (width and height), down to a minimum', () => {
+    const chat = createWindow({ title: 'ROOM', at: { left: 0, top: 0 }, resize: 'free' });
+    document.body.appendChild(chat.element);
+    chat.element.style.width = '400px';
+    chat.element.style.height = '300px';
+    const grip = chat.element.querySelector('.retro-grip');
+
+    pointer('pointerdown', grip, 400, 300);
+    pointer('pointermove', grip, 500, 380);
+    expect(chat.element.style.width).toBe('500px');
+    expect(chat.element.style.height).toBe('380px');
+
+    pointer('pointermove', grip, 0, 0); // dragged far past the minimum
+    expect(chat.element.style.width).toBe('280px');
+    expect(chat.element.style.height).toBe('220px');
+  });
+
+  it('aspect-locked windows resize by width only (the height follows the video)', () => {
+    const video = createWindow({ title: 'Sam', at: { left: 0, top: 0 }, resize: 'aspect' });
+    document.body.appendChild(video.element);
+    video.element.style.width = '240px';
+    const grip = video.element.querySelector('.retro-grip');
+
+    pointer('pointerdown', grip, 240, 160);
+    pointer('pointermove', grip, 400, 900);
+    expect(video.element.style.width).toBe('400px');
+    expect(video.element.style.height).toBe('');
+
+    video.setAspectRatio(9, 16);
+    expect(video.body.style.aspectRatio).toBe('9 / 16');
+  });
+
+  it('the grip resizes with the arrow keys too', () => {
+    const chat = createWindow({ title: 'ROOM', at: { left: 0, top: 0 }, resize: 'free' });
+    document.body.appendChild(chat.element);
+    chat.element.style.width = '400px';
+    chat.element.style.height = '300px';
+
+    chat.element.querySelector('.retro-grip').dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
+
+    expect(chat.element.style.width).toBe('416px');
+  });
+
+  it('has no grip unless resizing is asked for', () => {
+    expect(win.element.querySelector('.retro-grip')).toBeNull();
   });
 
   it('comes to the front when touched', () => {

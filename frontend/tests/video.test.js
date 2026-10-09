@@ -14,11 +14,14 @@ const lk = vi.hoisted(() => {
   };
   const state = { room: null, cameraError: null };
   class Room {
-    constructor() {
+    constructor(options) {
+      this.options = options;
       this.handlers = {};
       this.remoteParticipants = new Map();
+      this.localTrack = { stop: vi.fn() };
       this.localParticipant = {
         identity: 'me',
+        trackPublications: new Map([['mic', { track: this.localTrack }]]),
         setCameraEnabled: vi.fn(async () => {
           if (state.cameraError) throw state.cameraError;
         }),
@@ -50,120 +53,141 @@ import { initVideo } from '../src/video.js';
 let els;
 let onError;
 
-function button(id) {
-  const el = document.createElement('button');
-  el.id = id;
-  el.setAttribute('aria-pressed', 'false');
-  document.body.appendChild(el);
-  return el;
-}
-
 async function join() {
   els.joinButton.click();
-  await vi.waitFor(() => expect(els.panel.hidden).toBe(false));
+  await vi.waitFor(() => expect(els.joinButton.hidden).toBe(true));
   return lk.state.room;
 }
 
 function fakeTrack(kind) {
   const element = document.createElement(kind);
-  return { kind, attach: () => element, detach: () => [element] };
+  return { kind, element, attach: () => element, detach: () => [element] };
 }
+
+const windowOf = (name) => [...els.layer.children].find((w) => w.getAttribute('aria-label') === name);
+const ownControl = (label) => windowOf('You').querySelector(`[aria-label="${label}"]`);
 
 beforeEach(() => {
   document.body.innerHTML = '';
   lk.state.room = null;
   lk.state.cameraError = null;
-  const panel = document.createElement('section');
-  panel.hidden = true;
-  els = {
-    joinButton: button('join'),
-    panel,
-    layer: document.createElement('div'),
-    taskbar: document.createElement('div'),
-    cameraButton: button('camera'),
-    micButton: button('mic'),
-    leaveButton: button('leave'),
-    notice: document.createElement('p'),
-  };
+  const joinButton = document.createElement('button');
+  document.body.appendChild(joinButton);
+  els = { joinButton, layer: document.createElement('div'), taskbar: document.createElement('div') };
+  document.body.append(els.layer, els.taskbar);
   onError = vi.fn();
   initVideo('7', { ...els, onError });
 });
 
 describe('the room video call', () => {
-  it('joins with camera and mic off, showing your own window', async () => {
+  it('shows no call controls until you join', () => {
+    expect(els.layer.children).toHaveLength(0);
+    expect(document.querySelector('[aria-label="Microphone"]')).toBeNull();
+  });
+
+  it('joins with camera and mic off; your window carries mic, camera and leave', async () => {
     const room = await join();
 
     expect(room.connect).toHaveBeenCalledWith('wss://test.livekit.cloud', 'join-token');
     expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
     expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
-    expect(els.layer.textContent).toContain('You');
-    expect(els.joinButton.hidden).toBe(true);
+    expect(ownControl('Microphone').getAttribute('aria-pressed')).toBe('false');
+    expect(ownControl('Camera').getAttribute('aria-pressed')).toBe('false');
+    expect(ownControl('Leave video call')).not.toBeNull();
+    expect(windowOf('You').textContent).toContain('Your browser asks first');
   });
 
-  it('gives each person their own window, with their video, and removes it when they leave', async () => {
+  it('switching the mic off releases it (no recording indicator left on)', async () => {
+    const room = await join();
+    expect(room.options.publishDefaults.stopMicTrackOnMute).toBe(true);
+  });
+
+  it('camera and mic each switch only their own device', async () => {
+    const room = await join();
+
+    ownControl('Camera').click();
+    await vi.waitFor(() => expect(ownControl('Camera').getAttribute('aria-pressed')).toBe('true'));
+    expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
+    expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+
+    ownControl('Microphone').click();
+    await vi.waitFor(() => expect(ownControl('Microphone').getAttribute('aria-pressed')).toBe('true'));
+    ownControl('Microphone').click();
+    await vi.waitFor(() => expect(ownControl('Microphone').getAttribute('aria-pressed')).toBe('false'));
+    expect(room.localParticipant.setMicrophoneEnabled).toHaveBeenLastCalledWith(false);
+  });
+
+  it('explains a blocked camera inside your window, and keeps the switch off', async () => {
+    await join();
+    lk.state.cameraError = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+
+    ownControl('Camera').click();
+
+    await vi.waitFor(() => expect(windowOf('You').textContent).toContain('site settings'));
+    expect(ownControl('Camera').getAttribute('aria-pressed')).toBe('false');
+  });
+
+  it('a tap on your window reveals its controls; a tap elsewhere hides them', async () => {
+    await join();
+
+    windowOf('You').click();
+    expect(windowOf('You').classList.contains('show-controls')).toBe(true);
+
+    document.body.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true }));
+    expect(windowOf('You').classList.contains('show-controls')).toBe(false);
+  });
+
+  it('gives others their own window, shaped like their video, removed when they leave', async () => {
     const room = await join();
     const sam = { identity: '2', name: 'Sam' };
+    const video = fakeTrack('video');
 
     room.emit('participantConnected', sam);
-    room.emit('trackSubscribed', fakeTrack('video'), {}, sam);
-    expect(els.layer.textContent).toContain('Sam');
-    expect(els.layer.querySelectorAll('video')).toHaveLength(1);
+    room.emit('trackSubscribed', video, {}, sam);
+    expect(windowOf('Sam').querySelectorAll('video')).toHaveLength(1);
+
+    // A phone held upright: 720 wide, 1280 tall.
+    Object.defineProperty(video.element, 'videoWidth', { value: 720 });
+    Object.defineProperty(video.element, 'videoHeight', { value: 1280 });
+    video.element.dispatchEvent(new Event('loadedmetadata'));
+    expect(windowOf('Sam').querySelector('.retro-body').style.aspectRatio).toBe('720 / 1280');
 
     room.emit('participantDisconnected', sam);
-    expect(els.layer.textContent).not.toContain('Sam');
+    expect(windowOf('Sam')).toBeUndefined();
   });
 
-  it('hiding a window puts it on the taskbar, and the taskbar brings it back', async () => {
+  it("hiding someone else's window puts it on the taskbar, and the taskbar brings it back", async () => {
     const room = await join();
     room.emit('participantConnected', { identity: '2', name: 'Sam' });
-    const samWindow = [...els.layer.children].find((w) => w.textContent.includes('Sam'));
 
-    samWindow.querySelector('[aria-label="Hide Sam"]').click();
-    expect(samWindow.hidden).toBe(true);
+    windowOf('Sam').querySelector('[aria-label="Hide Sam"]').click();
+    expect(windowOf('Sam').hidden).toBe(true);
     const restore = els.taskbar.querySelector('button');
     expect(restore.textContent).toBe('Sam');
 
     restore.click();
-    expect(samWindow.hidden).toBe(false);
-    expect(els.taskbar.children).toHaveLength(0);
-
-    samWindow.querySelector('[aria-label="Hide Sam"]').click();
-    els.leaveButton.click();
+    expect(windowOf('Sam').hidden).toBe(false);
     expect(els.taskbar.children).toHaveLength(0);
   });
 
-  it('camera and mic are switches that only ask for their own device', async () => {
+  it('× on your own window leaves: devices stopped, page put back as it was', async () => {
     const room = await join();
+    room.emit('participantConnected', { identity: '2', name: 'Sam' });
+    windowOf('Sam').querySelector('[aria-label="Hide Sam"]').click();
 
-    els.cameraButton.click();
-    await vi.waitFor(() => expect(els.cameraButton.getAttribute('aria-pressed')).toBe('true'));
-    expect(room.localParticipant.setCameraEnabled).toHaveBeenCalledWith(true);
-    expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
+    ownControl('Leave video call').click();
 
-    els.cameraButton.click();
-    await vi.waitFor(() => expect(els.cameraButton.getAttribute('aria-pressed')).toBe('false'));
-    expect(room.localParticipant.setCameraEnabled).toHaveBeenLastCalledWith(false);
-  });
-
-  it('explains how to allow a blocked camera, and keeps the switch off', async () => {
-    await join();
-    lk.state.cameraError = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
-
-    els.cameraButton.click();
-
-    await vi.waitFor(() => expect(els.notice.textContent).toContain('site settings'));
-    expect(els.cameraButton.getAttribute('aria-pressed')).toBe('false');
-  });
-
-  it('leaving disconnects and puts the page back as it was', async () => {
-    const room = await join();
-
-    els.leaveButton.click();
-
-    expect(room.disconnect).toHaveBeenCalled();
-    expect(els.panel.hidden).toBe(true);
+    expect(room.localTrack.stop).toHaveBeenCalled();
+    expect(room.disconnect).toHaveBeenCalledWith(true);
     expect(els.joinButton.hidden).toBe(false);
     expect(els.layer.children).toHaveLength(0);
+    expect(els.taskbar.children).toHaveLength(0);
+  });
+
+  it('closing or leaving the page also ends the call', async () => {
+    const room = await join();
+    window.dispatchEvent(new Event('pagehide'));
+    expect(room.disconnect).toHaveBeenCalledWith(true);
   });
 
   it('reports a refused join (e.g. the night gate) to the page', async () => {
@@ -173,6 +197,6 @@ describe('the room video call', () => {
     els.joinButton.click();
 
     await vi.waitFor(() => expect(onError).toHaveBeenCalled());
-    expect(els.panel.hidden).toBe(true);
+    expect(els.layer.children).toHaveLength(0);
   });
 });

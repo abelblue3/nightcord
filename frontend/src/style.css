@@ -468,12 +468,6 @@ a {
   margin-bottom: 12px;
 }
 
-.video-panel {
-  display: grid;
-  gap: 10px;
-  margin-bottom: 16px;
-}
-
 /* Each person's video is a Windows 95-style window floating over the page:
    outset bevels (light top-left, dark bottom-right), inset when pressed. */
 .retro-window {
@@ -485,10 +479,6 @@ a {
   border: 2px solid;
   border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
   box-shadow: 3px 3px 0 var(--chrome-dark);
-}
-
-.retro-window.is-large {
-  width: 480px;
 }
 
 .retro-titlebar {
@@ -539,6 +529,9 @@ a {
 }
 
 .retro-title-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 20px;
   padding: 0;
@@ -552,8 +545,8 @@ a {
 }
 
 .retro-body {
+  position: relative;
   margin-top: 3px;
-  aspect-ratio: 4 / 3;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -563,8 +556,21 @@ a {
   border-color: var(--chrome-dark) var(--chrome-light) var(--chrome-light) var(--chrome-dark);
 }
 
-.retro-window.is-minimized .retro-body {
+.retro-window.is-minimized .retro-body,
+.retro-window.is-minimized .retro-grip {
   display: none;
+}
+
+/* Shrunk to its title bar, even after being resized (which sets an inline
+   height). */
+.retro-window.is-minimized {
+  height: auto !important;
+}
+
+/* Video windows keep the camera's shape: 16:9 until the video reports its
+   real size (video.js), and the whole picture always shows. */
+.retro-window.resize-aspect .retro-body {
+  aspect-ratio: 16 / 9;
 }
 
 #video-layer .retro-body:not(:has(video))::before {
@@ -576,29 +582,110 @@ a {
 .retro-body video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
-/* The room chat in the same window chrome: as wide as the chat column,
-   with the chat's own panel inside instead of a 4:3 video well. */
+/* Your own window's hint / device help, along its bottom edge. */
+.window-notice {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  margin: 0;
+  padding: 2px 6px;
+  font-family: var(--font-body);
+  font-size: 0.95rem;
+  line-height: 1.2;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.window-notice:empty {
+  display: none;
+}
+
+/* The corner grip (Win95's diagonal ridges) for resizing. */
+.retro-grip {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(
+    135deg,
+    transparent 0 50%,
+    var(--chrome-light) 50% 58%,
+    transparent 58% 70%,
+    var(--chrome-light) 70% 78%,
+    transparent 78% 88%,
+    var(--chrome-light) 88% 96%,
+    transparent 96%
+  );
+}
+
+.retro-grip:focus-visible {
+  outline: 2px dotted var(--ink);
+}
+
+/* Your mic and camera switches show while you point at, tap, or tab into
+   your own window; they stay in the page for screen readers. */
+.self-control {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.retro-window:hover .self-control,
+.retro-window:focus-within .self-control,
+.retro-window.show-controls .self-control {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.device-icon {
+  fill: var(--ink);
+}
+
+.self-control[aria-pressed='true'] .device-icon {
+  fill: var(--accent);
+}
+
+.self-control[aria-pressed='true'] .device-slash {
+  display: none;
+}
+
+.device-slash {
+  fill: var(--danger);
+}
+
+/* The room chat in the same window chrome, resizable both ways: the message
+   log takes whatever height the window has. */
 .chat-window {
+  display: flex;
+  flex-direction: column;
   width: min(720px, calc(100vw - 32px));
-}
-
-.chat-window.is-large {
-  width: min(960px, calc(100vw - 32px));
+  height: min(560px, calc(100vh - 120px));
 }
 
 .chat-window .retro-body {
-  aspect-ratio: auto;
+  flex: 1;
+  min-height: 0;
   display: block;
-  padding: 10px;
+  padding: 10px 10px 16px;
   background: var(--panel);
 }
 
-.chat-window.is-large .chat-log {
-  min-height: 480px;
-  max-height: 72vh;
+.chat-window #chat-content {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.chat-window .chat-log {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 /* Hidden windows (chat and video) wait here, Windows 95 taskbar style. */
@@ -623,32 +710,6 @@ a {
 .taskbar-button {
   font-size: 1rem;
   padding: 2px 12px;
-}
-
-.video-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.video-switch[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--bg);
-}
-
-.video-hint,
-.video-notice {
-  margin: 0;
-  font-size: 1rem;
-  color: var(--ink-soft);
-}
-
-.video-notice {
-  color: var(--danger);
-}
-
-.video-notice:empty {
-  display: none;
 }
 
 /* --- misc --- */
