@@ -10,9 +10,9 @@ COPY frontend/ ./
 # No VITE_API_URL / VITE_WS_URL on purpose: the pages call /api on their own
 # site, which this service carries through to the backend. Railway passes
 # service variables with these names in as build args.
-ARG VITE_GOOGLE_CLIENT_ID=""
+ARG VITE_CLERK_PUBLISHABLE_KEY=""
 ARG VITE_SENTRY_DSN=""
-RUN VITE_GOOGLE_CLIENT_ID="$VITE_GOOGLE_CLIENT_ID" VITE_SENTRY_DSN="$VITE_SENTRY_DSN" npm run build
+RUN VITE_CLERK_PUBLISHABLE_KEY="$VITE_CLERK_PUBLISHABLE_KEY" VITE_SENTRY_DSN="$VITE_SENTRY_DSN" npm run build
 
 # --- 2. The Ruby service that serves them ---
 FROM ruby:3.3-slim

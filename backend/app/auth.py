@@ -62,26 +62,21 @@ def credentials_error() -> HTTPException:
     return HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Could not validate credentials")
 
 
-def verified_claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
-    if credentials is None:
-        raise credentials_error()
+def session_claims(token: str) -> dict | None:
+    """The token's claims if Clerk signed it and it's still valid. Shared by
+    HTTP requests and the chat socket, so both accept the same tokens."""
     try:
-        return clerk_auth.verify_session_token(credentials.credentials)
+        return clerk_auth.verify_session_token(token)
     except clerk_auth.InvalidSessionToken as error:
         clerk_auth.logger.warning("Rejected a Clerk session token: %s", error)
-        raise credentials_error()
-
-
-def user_from_token(token: str, db: Session) -> User | None:
-    """Shared by the HTTP dependency and the chat WebSocket, so both check
-    tokens the same way.
-    """
-    try:
-        claims = clerk_auth.verify_session_token(token)
-    except clerk_auth.InvalidSessionToken as error:
-        clerk_auth.logger.warning("Rejected a Clerk session token on a chat socket: %s", error)
         return None
-    return db.query(User).filter(User.clerk_user_id == claims["sub"]).first()
+
+
+def verified_claims(credentials: HTTPAuthorizationCredentials | None) -> dict:
+    claims = session_claims(credentials.credentials) if credentials else None
+    if claims is None:
+        raise credentials_error()
+    return claims
 
 
 def get_current_user(

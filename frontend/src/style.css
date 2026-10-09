@@ -1,25 +1,9 @@
 @import './fonts/fonts.css';
 
+/* Two dark themes, no light one: Night (the default -- cool blacks and blues)
+   and Lamp (the same low brightness in warm ambers, like a desk lamp at 2am).
+   Every text/background pair meets WCAG AA contrast in both. */
 :root {
-  --ink: #1a1a1a;
-  --ink-soft: #5a5a5a;
-  --bg: #f6f1e3;
-  --panel: #ffffff;
-  --panel-hover: #fafafa;
-  --grid-line: rgba(26, 26, 26, 0.04);
-  --primary: #4a64e0;
-  --primary-dark: #2f44b8;
-  --accent: #f2b705;
-  --danger: #e0473c;
-  --good: #2f9e5c;
-  --border-w: 3px;
-  --shadow-off: 4px;
-
-  --font-display: 'Press Start 2P', monospace;
-  --font-body: 'VT323', 'Courier New', monospace;
-}
-
-[data-theme='dark'] {
   --ink: #ede8d8;
   --ink-soft: #9aa0b8;
   --bg: #14141c;
@@ -31,6 +15,25 @@
   --accent: #ffce54;
   --danger: #ff6b5b;
   --good: #4ecb8a;
+  --border-w: 3px;
+  --shadow-off: 4px;
+
+  --font-display: 'Press Start 2P', monospace;
+  --font-body: 'VT323', 'Courier New', monospace;
+}
+
+[data-theme='lamp'] {
+  --ink: #f2e2c4;
+  --ink-soft: #b89c78;
+  --bg: #1a130c;
+  --panel: #261c12;
+  --panel-hover: #31251a;
+  --grid-line: rgba(242, 226, 196, 0.05);
+  --primary: #e09a3e;
+  --primary-dark: #f3bf73;
+  --accent: #ffd27a;
+  --danger: #ff7b5c;
+  --good: #9fd17a;
 }
 
 * {
@@ -118,15 +121,15 @@ a {
   gap: 14px;
 }
 
+/* The Lamp switch: lit (accent fill) while Lamp is on. */
 .theme-toggle {
-  width: 42px;
-  height: 42px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-  line-height: 1;
+  font-size: 0.62rem;
+  padding: 8px 10px;
+}
+
+.theme-toggle[aria-pressed='true'] {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 /* --- panels / cards --- */
@@ -176,7 +179,7 @@ a {
 
 .btn-primary {
   background: var(--primary);
-  color: #fff;
+  color: var(--bg);
 }
 .btn-primary:hover {
   background: var(--primary-dark);
@@ -279,7 +282,7 @@ a {
 .error-box {
   font-family: var(--font-body);
   font-size: 1.1rem;
-  color: #fff;
+  color: var(--bg);
   background: var(--danger);
   border: var(--border-w) solid var(--ink);
   padding: 10px 12px;
@@ -540,7 +543,7 @@ a {
 }
 
 .clerk-auth .cl-socialButtonsBlockButtonText {
-  color: var(--ink); /* the site's black (light text in dark mode) */
+  color: var(--ink);
 }
 
 .clerk-auth .clerk-social-button {

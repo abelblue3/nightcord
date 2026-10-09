@@ -1,4 +1,6 @@
+import time
 from datetime import datetime, timezone as dt_timezone
+from zoneinfo import ZoneInfo
 
 import pytest
 from starlette.websockets import WebSocketDisconnect
@@ -9,6 +11,7 @@ from app.gate import (
     dev_bypass_active,
     is_night_in_timezone,
     is_valid_timezone,
+    night_ends_at,
     resolve_signup_timezone,
 )
 from app.campus_time import NOT_FOUND, SchoolLookup
@@ -51,6 +54,30 @@ def test_is_night_in_timezone_converts_across_zones():
 def test_is_night_in_timezone_falls_back_to_utc_for_invalid_zone():
     now = datetime(2026, 1, 1, 22, 0, tzinfo=dt_timezone.utc)  # 10pm UTC -> night
     assert is_night_in_timezone("not-a-real-zone", now=now) is True
+
+
+# --- night_ends_at ---
+
+NEW_YORK = ZoneInfo("America/New_York")
+
+
+def test_night_ends_at_next_morning_before_midnight():
+    now = datetime(2026, 1, 1, 23, 0, tzinfo=NEW_YORK)
+    assert night_ends_at("America/New_York", now=now) == datetime(2026, 1, 2, 6, 0, tzinfo=NEW_YORK)
+
+
+def test_night_ends_at_same_morning_after_midnight():
+    now = datetime(2026, 1, 2, 2, 0, tzinfo=NEW_YORK)
+    assert night_ends_at("America/New_York", now=now) == datetime(2026, 1, 2, 6, 0, tzinfo=NEW_YORK)
+
+
+def test_night_ends_at_6am_local_across_a_daylight_saving_change():
+    # New York's clocks jump from 2am to 3am on 8 March 2026, so at 1:30am
+    # the night has 3.5 real hours left, not 4.5.
+    now = datetime(2026, 3, 8, 1, 30, tzinfo=NEW_YORK)
+    end = night_ends_at("America/New_York", now=now)
+    assert end == datetime(2026, 3, 8, 6, 0, tzinfo=NEW_YORK)
+    assert end.timestamp() - now.timestamp() == 3.5 * 3600
 
 
 # --- resolve_signup_timezone ---
@@ -231,6 +258,18 @@ def test_websocket_canary_bypass_uses_a_header(client, logged_in_gate_user, room
         with pytest.raises(WebSocketDisconnect) as closed:
             ws.receive_json()
     assert closed.value.reason.startswith("gate-closed:")
+
+
+def test_websocket_canary_bypass_is_not_closed_when_night_ends(client, logged_in_gate_user, room_socket, monkeypatch):
+    room = client.post("/rooms", json={"name": "gate-ws-canary-morning"}).json()
+
+    monkeypatch.setattr("app.gate.night_ends_at", lambda tz, now=None: datetime.now(dt_timezone.utc))
+    monkeypatch.setattr("app.gate.settings.canary_bypass_token", "canary-secret")
+
+    with room_socket(room["id"], headers={"X-Canary-Token": "canary-secret"}) as ws:
+        time.sleep(0.2)
+        ws.send_json({"content": "still up"})
+        assert ws.receive_json()["content"] == "still up"
 
 
 def test_canary_bypass_rejects_a_near_miss(monkeypatch):

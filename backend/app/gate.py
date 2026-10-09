@@ -8,7 +8,7 @@ changing a system clock or using a VPN -- see the handoff doc's Decisions
 section for the full reasoning.
 """
 import secrets
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import Depends, Header, HTTPException, status
 from app.auth import get_current_user
@@ -42,15 +42,28 @@ def resolve_signup_timezone(school: SchoolLookup, client_timezone: str | None) -
     return FALLBACK_TIMEZONE
 
 
-def is_night_in_timezone(tz_name: str, now: datetime | None = None) -> bool:
+def _local_time(tz_name: str, now: datetime | None) -> datetime:
+    """`now` (default: the current time) in this timezone, or in UTC if the
+    name isn't a real timezone."""
     try:
         tz = ZoneInfo(tz_name)
     except (ZoneInfoNotFoundError, ValueError):
         tz = ZoneInfo(FALLBACK_TIMEZONE)
+    return (now or datetime.now(tz)).astimezone(tz)
 
-    current = (now or datetime.now(tz)).astimezone(tz)
-    hour = current.hour
+
+def is_night_in_timezone(tz_name: str, now: datetime | None = None) -> bool:
+    hour = _local_time(tz_name, now).hour
     return hour >= NIGHT_START_HOUR or hour < NIGHT_END_HOUR
+
+
+def night_ends_at(tz_name: str, now: datetime | None = None) -> datetime:
+    """The next 6am in this timezone -- when an open chat socket is closed."""
+    current = _local_time(tz_name, now)
+    end = datetime.combine(current.date(), time(NIGHT_END_HOUR), tzinfo=current.tzinfo)
+    # Same-zone datetime arithmetic is wall-clock, so this stays 6am local
+    # across a daylight-saving change.
+    return end if end > current else end + timedelta(days=1)
 
 
 def dev_bypass_active(skip_gate_header: str | None) -> bool:

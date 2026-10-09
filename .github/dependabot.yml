@@ -1,0 +1,39 @@
+# Weekly dependency-update PRs against beta, where changes are tested before
+# main. Minor and patch updates arrive grouped, one PR per ecosystem.
+version: 2
+updates:
+  - package-ecosystem: pip
+    directory: /backend
+    schedule:
+      interval: weekly
+    target-branch: beta
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directories: [/frontend, /scripts]
+    schedule:
+      interval: weekly
+    target-branch: beta
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: bundler
+    directory: /web
+    schedule:
+      interval: weekly
+    target-branch: beta
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    target-branch: beta
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]

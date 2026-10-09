@@ -4,7 +4,7 @@
 //
 // Categories (the cookie banner and the Privacy Policy describe the same):
 //   essential   -- always on: sign-in (Clerk), bot protection, session info
-//   preferences -- remembering light/dark mode between visits
+//   preferences -- remembering the Night/Lamp theme between visits
 //   diagnostics -- crash reports to Sentry
 
 // Bump this whenever the Privacy Policy's cookie section changes, so

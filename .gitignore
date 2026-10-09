@@ -1,13 +1,27 @@
 backend/.venv/
-backend/.env
 __pycache__/
 *.pyc
 *.db
-backend/.pytest_cache/
+.pytest_cache/
+.ruff_cache/
 
 node_modules/
 frontend/dist/
-frontend/.env
 
-# Local Claude Code notes and settings -- personal, not part of the project.
+# Secrets: any .env file, anywhere (the .env.example templates stay tracked).
+.env
+.env.*
+!.env.example
+
+# Claude Code notes, settings and instructions -- personal, not part of the
+# project.
 .claude/
+CLAUDE.md
+CLAUDE.local.md
+
+# Editor and OS clutter, and logs.
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log

@@ -1,6 +1,7 @@
 import os
 import time
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from itertools import count
 from types import SimpleNamespace
 
@@ -37,7 +38,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.clerk_auth import ClerkAPIError, ClerkUser
-from app.database import Base, get_db
+from app.database import Base, get_db, get_session_factory
 from app.main import app
 
 
@@ -125,6 +126,8 @@ def client(db_session):
         yield db_session
 
     app.dependency_overrides[get_db] = override_get_db
+    # The chat socket's short per-step sessions are all the shared one here.
+    app.dependency_overrides[get_session_factory] = lambda: contextmanager(override_get_db)
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
@@ -210,3 +213,6 @@ def always_night(monkeypatch):
     tests using a fallback UTC timezone would flake depending on the hour.
     """
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz_name, now=None: True)
+    # ...and no open chat socket reaches its 6am close mid-test.
+    tomorrow = datetime.now(timezone.utc) + timedelta(days=1)
+    monkeypatch.setattr("app.gate.night_ends_at", lambda tz_name, now=None: tomorrow)

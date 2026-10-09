@@ -1,3 +1,6 @@
+import time
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
@@ -146,6 +149,33 @@ def test_websocket_accepts_allowed_origin(client, logged_in_user, room_socket):
         assert ws.receive_json()["content"] == "from the real frontend"
 
 
+def test_idle_socket_holds_no_database_session(client, logged_in_user, room_socket, db_session):
+    from contextlib import contextmanager
+
+    from app.database import get_session_factory
+    from app.main import app
+
+    sessions = {"opened": 0, "open_now": 0}
+
+    @contextmanager
+    def counting_session():
+        sessions["opened"] += 1
+        sessions["open_now"] += 1
+        try:
+            yield db_session
+        finally:
+            sessions["open_now"] -= 1
+
+    app.dependency_overrides[get_session_factory] = lambda: counting_session
+
+    with room_socket(logged_in_user["room_id"]) as ws:
+        ws.send_json({"content": "hello"})
+        ws.receive_json()
+        # Sign-in, room check and the message each used a session, and none
+        # is still open while the socket waits for more.
+        assert sessions == {"opened": 3, "open_now": 0}
+
+
 def test_history_includes_author_display_name(client, logged_in_user, room_socket):
     room_id = logged_in_user["room_id"]
 
@@ -155,6 +185,52 @@ def test_history_includes_author_display_name(client, logged_in_user, room_socke
 
     history = client.get(f"/rooms/{room_id}/messages").json()
     assert history[-1]["display_name"] == "Chat User"
+
+
+# --- open sockets are re-checked ---
+
+
+def test_socket_outlives_its_token_by_the_grace_period(client, logged_in_user, room_socket):
+    # A background tab may only send its next token a minute later.
+    short_lived = make_token(logged_in_user["clerk_user_id"], expires_in=1)
+
+    with room_socket(logged_in_user["room_id"], token=short_lived) as ws:
+        time.sleep(1.1)  # past the token's expiry
+        ws.send_json({"content": "still here"})
+        assert ws.receive_json()["content"] == "still here"
+
+
+def test_fresh_token_keeps_the_socket_open(client, logged_in_user, room_socket, monkeypatch):
+    monkeypatch.setattr("app.routers.chat.TOKEN_GRACE_SECONDS", 0)
+    short_lived = make_token(logged_in_user["clerk_user_id"], expires_in=1)
+
+    with room_socket(logged_in_user["room_id"], token=short_lived) as ws:
+        ws.send_json({"type": "auth", "token": make_token(logged_in_user["clerk_user_id"])})
+        time.sleep(1.1)  # past the first token's expiry
+        ws.send_json({"content": "still here"})
+        assert ws.receive_json()["content"] == "still here"
+
+
+def test_socket_closes_when_its_token_runs_out(client, logged_in_user, room_socket, monkeypatch):
+    monkeypatch.setattr("app.routers.chat.TOKEN_GRACE_SECONDS", 0)
+    short_lived = make_token(logged_in_user["clerk_user_id"], expires_in=1)
+
+    with room_socket(logged_in_user["room_id"], token=short_lived) as ws:
+        assert _closed_reason(ws) == "session-expired"
+
+
+def test_another_accounts_token_closes_the_socket(client, logged_in_user, room_socket):
+    with room_socket(logged_in_user["room_id"]) as ws:
+        ws.send_json({"type": "auth", "token": make_token("user_someone_else")})
+        assert _closed_reason(ws) == "unauthorized"
+
+
+def test_socket_closes_when_the_night_ends(client, logged_in_user, room_socket, monkeypatch):
+    soon = datetime.now(timezone.utc) + timedelta(seconds=0.3)
+    monkeypatch.setattr("app.gate.night_ends_at", lambda tz_name, now=None: soon)
+
+    with room_socket(logged_in_user["room_id"]) as ws:
+        assert _closed_reason(ws).startswith("gate-closed:")
 
 
 # --- per-connection send limit ---

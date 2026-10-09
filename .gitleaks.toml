@@ -1,3 +1,8 @@
+cd frontend
+npm audit fix
+npm audit --audit-level=high
+npm test
+cd ..
 title = "nightcord gitleaks config"
 
 [extend]

@@ -25,6 +25,7 @@ import {
   getRoomMessages,
   checkSignupEmail,
   syncConsent,
+  REAUTH_INTERVAL_MS,
 } from '../src/api.js';
 import { getConsent, saveConsent } from '../src/consent.js';
 
@@ -371,7 +372,29 @@ describe('connectRoomSocket', () => {
       open() {
         for (const fn of this.listeners.open || []) fn();
       }
+
+      close() {
+        for (const fn of this.listeners.close || []) fn({});
+      }
     };
+  });
+
+  it('sends a fresh token every REAUTH_INTERVAL_MS while open, and stops after close', async () => {
+    vi.useFakeTimers();
+    try {
+      const socket = await connectRoomSocket(42);
+      socket.open();
+      clerkState.token = 'clerk-token-2';
+
+      await vi.advanceTimersByTimeAsync(REAUTH_INTERVAL_MS);
+      expect(JSON.parse(socket.sent[1])).toEqual({ type: 'auth', token: 'clerk-token-2' });
+
+      socket.close();
+      await vi.advanceTimersByTimeAsync(REAUTH_INTERVAL_MS * 3);
+      expect(socket.sent).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('builds a ws URL with just the room id -- no token in the URL', async () => {

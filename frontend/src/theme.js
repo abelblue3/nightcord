@@ -2,16 +2,17 @@ import { CONSENT_EVENT, hasConsent } from './consent.js';
 
 const THEME_KEY = 'nightcord_theme';
 
-// The light/dark choice is always applied. It's only *remembered between
-// visits* (localStorage) with the visitor's "Preferences" consent; without
-// it, it lasts for this browser session (sessionStorage).
+// Night (the default) or Lamp. The choice is always applied; it's only
+// *remembered between visits* (localStorage) with the visitor's "Preferences"
+// consent; without it, it lasts for this browser session (sessionStorage).
 export function getTheme() {
-  return sessionStorage.getItem(THEME_KEY) || localStorage.getItem(THEME_KEY) || 'light';
+  const saved = sessionStorage.getItem(THEME_KEY) || localStorage.getItem(THEME_KEY);
+  return saved === 'lamp' ? 'lamp' : 'night';
 }
 
 export function applyTheme(theme) {
-  if (theme === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark');
+  if (theme === 'lamp') {
+    document.documentElement.setAttribute('data-theme', 'lamp');
   } else {
     document.documentElement.removeAttribute('data-theme');
   }
@@ -35,17 +36,18 @@ window.addEventListener(CONSENT_EVENT, () => {
   if (current) setTheme(current);
 });
 
+// A "Lamp" switch: pressed (and lit) while Lamp is on.
 export function initThemeToggle(buttonEl) {
+  buttonEl.textContent = 'Lamp';
+  buttonEl.title = 'Lamp: warmer colors';
+
   function render() {
-    const theme = getTheme();
-    buttonEl.textContent = theme === 'dark' ? '☀' : '☾';
-    buttonEl.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-    buttonEl.setAttribute('title', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+    buttonEl.setAttribute('aria-pressed', String(getTheme() === 'lamp'));
   }
 
   render();
   buttonEl.addEventListener('click', () => {
-    setTheme(getTheme() === 'dark' ? 'light' : 'dark');
+    setTheme(getTheme() === 'lamp' ? 'night' : 'lamp');
     render();
   });
 }
