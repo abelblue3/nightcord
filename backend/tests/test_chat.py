@@ -202,11 +202,13 @@ def test_socket_outlives_its_token_by_the_grace_period(client, logged_in_user, r
 
 def test_fresh_token_keeps_the_socket_open(client, logged_in_user, room_socket, monkeypatch):
     monkeypatch.setattr("app.routers.chat.TOKEN_GRACE_SECONDS", 0)
-    short_lived = make_token(logged_in_user["clerk_user_id"], expires_in=1)
+    # exp is whole seconds, so expires_in=2 leaves at least a second for the
+    # fresh token to arrive (1 could leave only milliseconds).
+    short_lived = make_token(logged_in_user["clerk_user_id"], expires_in=2)
 
     with room_socket(logged_in_user["room_id"], token=short_lived) as ws:
         ws.send_json({"type": "auth", "token": make_token(logged_in_user["clerk_user_id"])})
-        time.sleep(1.1)  # past the first token's expiry
+        time.sleep(2.1)  # past the first token's expiry
         ws.send_json({"content": "still here"})
         assert ws.receive_json()["content"] == "still here"
 

@@ -5,6 +5,7 @@ psycopg2-binary==2.9.9
 pydantic[email]==2.9.2
 pydantic-settings==2.5.2
 PyJWT[crypto]==2.15.1
+livekit-api==1.2.1
 python-dotenv==1.2.2
 alembic==1.13.3
 dnspython==2.6.1

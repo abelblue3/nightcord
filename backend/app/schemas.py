@@ -43,6 +43,10 @@ class RoomOut(BaseModel):
     class Config:
         from_attributes = True
 
+class VideoTokenOut(BaseModel):
+    url: str
+    token: str
+
 class MessageOut(BaseModel):
     id: int
     room_id: int

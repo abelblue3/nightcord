@@ -1,11 +1,16 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from livekit import api as livekit
 from sqlalchemy.orm import Session, joinedload
 
+from app import gate
+from app.config import settings
 from app.database import get_db
 from app.gate import require_night_access
 from app.models import Message, Room, User
 from app.rate_limit import limiter, user_or_ip_key
-from app.schemas import MessageOut, RoomCreate, RoomOut
+from app.schemas import MessageOut, RoomCreate, RoomOut, VideoTokenOut
 
 router = APIRouter(prefix="/rooms", tags=["rooms"])
 
@@ -64,3 +69,42 @@ def get_room_messages(
 
     newest_first = query.order_by(Message.id.desc()).limit(limit).all()
     return list(reversed(newest_first))
+
+
+@router.post("/{room_id}/video-token", response_model=VideoTokenOut)
+@limiter.limit("20/minute", key_func=user_or_ip_key)
+def get_video_token(
+    request: Request,
+    room_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_night_access),
+) -> VideoTokenOut:
+    """A LiveKit join token for this room's video call. LiveKit carries the
+    video and audio; nightcord only decides who may join, with the same
+    checks as the chat (signed in, night at their school).
+    """
+    if not (settings.livekit_url and settings.livekit_api_key and settings.livekit_api_secret):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Video isn't set up yet.")
+    if not db.get(Room, room_id):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found.")
+
+    # Valid until 6am at the student's school, so nobody can join after the
+    # night ends.
+    night_ends = gate.night_ends_at(current_user.timezone or gate.FALLBACK_TIMEZONE)
+    token = (
+        livekit.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
+        .with_identity(str(current_user.id))
+        .with_name(current_user.display_name)
+        .with_ttl(night_ends - datetime.now(timezone.utc))
+        .with_grants(
+            livekit.VideoGrants(
+                room_join=True,
+                room=f"room-{room_id}",
+                can_subscribe=True,
+                can_publish=True,
+                can_publish_sources=["camera", "microphone"],  # no screen sharing
+                can_publish_data=False,  # chat stays on nightcord's own socket
+            )
+        )
+    )
+    return VideoTokenOut(url=settings.livekit_url, token=token.to_jwt())

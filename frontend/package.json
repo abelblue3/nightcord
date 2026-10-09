@@ -15,6 +15,7 @@
     "vitest": "^4.1.10"
   },
   "dependencies": {
-    "@sentry/browser": "^10.70.0"
+    "@sentry/browser": "^10.70.0",
+    "livekit-client": "^2.22.3"
   }
 }
