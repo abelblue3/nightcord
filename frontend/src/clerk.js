@@ -9,12 +9,12 @@ const CLERK_JS_MAJOR = 6;
 const CLERK_UI_MAJOR = 1;
 
 // Clerk's screens in nightcord's look. Colors and fonts point at the site's
-// own CSS variables, so they follow the light/dark toggle automatically; the
+// own CSS variables, so they follow the Night/Lamp toggle automatically; the
 // thick borders and offset shadows come from style.css (the .cl-* rules).
 export const appearance = {
   variables: {
     colorPrimary: 'var(--primary)',
-    colorPrimaryForeground: '#ffffff',
+    colorPrimaryForeground: 'var(--bg)',
     colorBackground: 'var(--panel)',
     colorForeground: 'var(--ink)',
     colorMutedForeground: 'var(--ink-soft)',
@@ -23,6 +23,9 @@ export const appearance = {
     colorInput: 'var(--panel)',
     colorInputForeground: 'var(--ink)',
     colorBorder: 'var(--ink)',
+    // Clerk shades the Google/Microsoft button text from this (black by
+    // default, which disappears on the dark themes).
+    colorNeutral: 'var(--ink)',
     fontFamily: 'var(--font-body)',
     // Clerk also uses the "button" font for the Google/Microsoft buttons and
     // the "Secured by" / "Development mode" footer, so this is the body font;

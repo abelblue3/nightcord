@@ -16,7 +16,7 @@ const CATEGORIES = [
   {
     key: 'preferences',
     label: 'Preferences',
-    description: 'Remembers your light/dark mode choice between visits.',
+    description: 'Remembers your Night/Lamp theme choice between visits.',
   },
   {
     key: 'diagnostics',

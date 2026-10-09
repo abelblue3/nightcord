@@ -22,7 +22,7 @@ Pages and API share one domain. There is no business logic here: sign-in
 | `GET /api/rooms` | `/rooms` | token | `[{id, name, created_by, created_at}]` or `403 {detail: {message, timezone}}` |
 | `POST /api/rooms` | `/rooms` | token + `{name}` | room object; 409/429 |
 | `GET /api/rooms/:id/messages?before=` | `/rooms/:id/messages` | token | up to 50 `[{id, room_id, user_id, display_name, content, created_at}]`, oldest first |
-| `WS /api/ws/rooms/:id` | `/ws/rooms/:id` | first frame `{type: "auth", token}`, then `{content}` frames | server frames `{id, room_id, user_id, display_name, content, created_at}`; FastAPI's close code and reason passed on unchanged |
+| `WS /api/ws/rooms/:id` | `/ws/rooms/:id` | first frame `{type: "auth", token}`, then `{content}` frames and a fresh auth frame every 40 s | server frames `{id, room_id, user_id, display_name, content, created_at}`; FastAPI's close code and reason passed on unchanged |
 | `GET /api/health` | `/health` | — | `{status: "ok"}` |
 | `GET /healthz` | — (answered here) | — | `{status: "ok"}` |
 
@@ -55,7 +55,7 @@ such as the canary) are allowed through to FastAPI's session check.
 | `DIST_DIR` | `../frontend/dist` | The built pages (the Docker image sets `/app/public`). |
 | `PORT` / `BIND` | `4567` / `0.0.0.0` | Where to listen. |
 
-For the Docker build, `VITE_GOOGLE_CLIENT_ID` and `VITE_SENTRY_DSN` are
+For the Docker build, `VITE_CLERK_PUBLISHABLE_KEY` and `VITE_SENTRY_DSN` are
 passed to the frontend build. `VITE_API_URL` / `VITE_WS_URL` are deliberately
 left unset so the pages call `/api` on their own site.
 
@@ -86,6 +86,10 @@ on Windows and Linux.
 
 ## Deploying (Railway)
 
-A separate Railway service built from the **repo root** with
-`web/Dockerfile`. Point the service's config-as-code path at
+Not deployed today: production serves the pages from Vercel, and the browser
+calls the FastAPI service on Railway directly. This layer is the local
+development entry point, and CI's end-to-end test runs through it.
+
+To deploy it later instead: a separate Railway service built from the **repo
+root** with `web/Dockerfile`. Point the service's config-as-code path at
 `web/railway.json`.

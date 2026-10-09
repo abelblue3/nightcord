@@ -1,0 +1,8 @@
+# Catches real mistakes (unused or undefined names, syntax errors) without
+# restyling the code. Listed explicitly so a ruff upgrade can't change them.
+[lint]
+select = ["E4", "E7", "E9", "F"]
+
+[lint.per-file-ignores]
+# The test settings have to be in the environment before the app is imported.
+"tests/conftest.py" = ["E402"]

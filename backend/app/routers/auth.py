@@ -14,7 +14,9 @@ from app.models import User
 from app.rate_limit import limiter
 from app.schemas import EmailCheck, EmailCheckOut, MessageResponse, SessionStart, UserOut
 
-logger = logging.getLogger(__name__)
+# uvicorn's logger, like clerk_auth's, so failures show up formatted alongside
+# the server's own lines.
+logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 

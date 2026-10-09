@@ -28,12 +28,15 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version-file: backend/.python-version
           cache: "pip"
           cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: ruff check .
 
       - name: Run tests
         run: pytest -v
@@ -65,12 +68,23 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version-file: backend/.python-version
           cache: "pip"
           cache-dependency-path: backend/requirements-dev.txt
 
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
+
+      # The real migration chain, as Railway runs it before each deploy, and a
+      # check that the models and migrations describe the same schema.
+      - name: Migrations apply cleanly and match the models
+        env:
+          PGPASSWORD: postgres
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/nightcord_migrations
+        run: |
+          createdb -h localhost -U postgres nightcord_migrations
+          alembic upgrade head
+          alembic check
 
       - name: Run tests against real Postgres
         env:
@@ -98,8 +112,9 @@ jobs:
         run: docker build -f web/Dockerfile -t nightcord-web .
 
   e2e:
-    # The whole chain as deployed: built pages and API calls through the Ruby
-    # web layer to FastAPI, exercised by the same script as the prod canary.
+    # The whole chain, exercised by the same script as the prod canary: once
+    # through the Ruby web layer (the local setup) and once against FastAPI
+    # directly (how production's pages call it).
     runs-on: ubuntu-latest
     env:
       DATABASE_URL: sqlite:///${{ github.workspace }}/e2e.db
@@ -123,7 +138,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version-file: backend/.python-version
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 
@@ -174,6 +189,13 @@ jobs:
         env:
           CANARY_FRONTEND_URL: http://127.0.0.1:4567
           CANARY_API_URL: http://127.0.0.1:4567/api
+        run: node canary.mjs
+
+      - name: Run the canary against FastAPI directly, as production calls it
+        working-directory: scripts
+        env:
+          CANARY_FRONTEND_URL: http://127.0.0.1:4567
+          CANARY_API_URL: http://127.0.0.1:8000
         run: node canary.mjs
 
       - name: Server logs

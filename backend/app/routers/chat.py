@@ -1,16 +1,19 @@
 import asyncio
 import json
+import math
 import time
 from collections import deque
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from starlette.concurrency import run_in_threadpool
 
 from app import gate
-from app.auth import user_from_token
+from app.auth import session_claims
 from app.config import settings
 from app.connection_manager import manager
-from app.database import get_db
+from app.database import get_session_factory
 from app.models import Message, Room, User
 
 router = APIRouter(tags=["chat"])
@@ -65,46 +68,86 @@ def origin_allowed(websocket: WebSocket) -> bool:
     return origin is None or origin in settings.cors_origin_list
 
 
-def parse_message_content(raw: str | None) -> str | None:
-    """Returns the message text to store, or None if the frame should be
-    ignored. Anything malformed is skipped rather than raised -- an uncaught
-    error here would drop the sender's connection over one bad frame.
+def parse_frame(raw: str | None) -> dict:
+    """The frame's JSON object, or {} for anything else. Malformed frames are
+    skipped rather than raised -- an uncaught error here would drop the
+    sender's connection over one bad frame.
     """
-    if raw is None:
-        return None
     try:
-        data = json.loads(raw)
+        data = json.loads(raw or "")
     except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict) or not isinstance(data.get("content"), str):
-        return None
+        return {}
+    return data if isinstance(data, dict) else {}
 
-    content = data["content"].strip()
+
+def message_content(data: dict) -> str | None:
+    """The message text to store, or None if there's nothing to store."""
+    content = data.get("content")
+    if not isinstance(content, str):
+        return None
+    content = content.strip()
     if not content or len(content) > MAX_MESSAGE_LENGTH:
         return None
     return content
 
 
+def auth_token(data: dict) -> str | None:
+    """The token from an auth frame: {"type": "auth", "token": ...}."""
+    token = data.get("token")
+    return token if data.get("type") == "auth" and isinstance(token, str) else None
+
+
+async def run_db(session_factory: sessionmaker, work):
+    """Runs work(db) in its own short session, off the event loop. A socket
+    stays open for hours, so it must never hold a session (and a pooled
+    connection) while it waits; and a blocking database call on the event
+    loop would stall every other socket and request.
+    """
+
+    def run():
+        with session_factory() as db:
+            return work(db)
+
+    return await run_in_threadpool(run)
+
+
+def save_message(db: Session, room_id: int, user_id: int, content: str) -> tuple[int, datetime]:
+    """Returns the new message's id and created_at, read after the INSERT
+    and before the commit expires them, so nothing is fetched back."""
+    message = Message(room_id=room_id, user_id=user_id, content=content)
+    db.add(message)
+    db.flush()
+    saved = (message.id, message.created_at)
+    db.commit()
+    return saved
+
+
 # Browsers can't put an Authorization header on a WebSocket, so the Clerk
-# session token arrives as the first message instead: {"type":"auth","token":...}.
+# session token arrives as a message instead: {"type":"auth","token":...},
+# first thing after connecting and then every 40 seconds from the page.
 # (Not in the URL: URLs end up in logs.)
 AUTH_TIMEOUT_SECONDS = 5.0
 
+# How long past its token's expiry an open socket waits for a fresher one
+# before closing ("session-expired"). Generous because a background tab may
+# only run the page's timers once a minute; a signed-out or banned student
+# can't get new tokens, so they still lose the socket within two minutes.
+TOKEN_GRACE_SECONDS = 60
 
-async def authenticate(websocket: WebSocket, db: Session) -> User | None:
+
+async def authenticate(websocket: WebSocket, session_factory: sessionmaker) -> tuple[User, dict] | None:
+    """The user and token claims from the socket's first frame, or None."""
     try:
         frame = await asyncio.wait_for(websocket.receive(), timeout=AUTH_TIMEOUT_SECONDS)
     except asyncio.TimeoutError:
         return None
-    if frame["type"] != "websocket.receive":
+    token = auth_token(parse_frame(frame.get("text")))
+    claims = session_claims(token) if token else None
+    if claims is None:
         return None
-    try:
-        data = json.loads(frame.get("text") or "")
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(data, dict) or data.get("type") != "auth" or not isinstance(data.get("token"), str):
-        return None
-    return user_from_token(data["token"], db)
+    # The row's columns stay readable after its session closes.
+    user = await run_db(session_factory, lambda db: db.query(User).filter(User.clerk_user_id == claims["sub"]).first())
+    return (user, claims) if user else None
 
 
 async def refuse(websocket: WebSocket, reason: str) -> None:
@@ -121,7 +164,7 @@ async def room_chat(
     websocket: WebSocket,
     room_id: int,
     skip_gate: str | None = None,
-    db: Session = Depends(get_db),
+    session_factory: sessionmaker = Depends(get_session_factory),
 ):
     if not origin_allowed(websocket):
         raise WebSocketException(code=status.WS_1008_POLICY_VIOLATION, reason="Origin not allowed")
@@ -130,12 +173,13 @@ async def room_chat(
     # browser can read, rather than a bare failed handshake.
     await websocket.accept()
 
-    user = await authenticate(websocket, db)
-    if user is None:
+    signed_in = await authenticate(websocket, session_factory)
+    if signed_in is None:
         await refuse(websocket, "unauthorized")
         return
+    user, claims = signed_in
 
-    if not db.get(Room, room_id):
+    if not await run_db(session_factory, lambda db: db.get(Room, room_id) is not None):
         await refuse(websocket, "Room not found")
         return
 
@@ -143,11 +187,13 @@ async def room_chat(
     # proxy and server logs. (The dev-only skip_gate stays a query param --
     # browsers can't set headers on a WebSocket, and it's inert outside dev.)
     canary_token = websocket.headers.get("x-canary-token")
+    user_tz = user.timezone or gate.FALLBACK_TIMEZONE
+    gate_closes_at = math.inf  # the dev and canary bypasses never close
     if not (gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
-        user_tz = user.timezone or gate.FALLBACK_TIMEZONE
         if not gate.is_night_in_timezone(user_tz):
             await refuse(websocket, f"gate-closed:{user_tz}")
             return
+        gate_closes_at = gate.night_ends_at(user_tz).timestamp()
 
     manager.connect(room_id, websocket)
     limiter = SendLimiter()
@@ -156,7 +202,14 @@ async def room_chat(
     # left behind would make every later broadcast in the room fail.
     try:
         while True:
-            frame = await websocket.receive()
+            # Checked again while the socket stays open: it's closed when its
+            # night ends, or when its token runs out without a fresher one.
+            deadline = min(gate_closes_at, claims["exp"] + TOKEN_GRACE_SECONDS)
+            try:
+                frame = await asyncio.wait_for(websocket.receive(), timeout=deadline - time.time())
+            except asyncio.TimeoutError:
+                await refuse(websocket, f"gate-closed:{user_tz}" if deadline == gate_closes_at else "session-expired")
+                break
             if frame["type"] == "websocket.disconnect":
                 break
 
@@ -167,24 +220,34 @@ async def room_chat(
             if verdict == "drop":
                 continue
 
-            content = parse_message_content(frame.get("text"))
+            data = parse_frame(frame.get("text"))
+            token = auth_token(data)
+            if token is not None:
+                # A fresh token for the same account keeps the socket open;
+                # one that fails (or is someone else's) ends it.
+                claims = session_claims(token)
+                if claims is None or claims["sub"] != user.clerk_user_id:
+                    await refuse(websocket, "unauthorized")
+                    break
+                continue
+
+            content = message_content(data)
             if content is None:
                 continue
 
-            message = Message(room_id=room_id, user_id=user.id, content=content)
-            db.add(message)
-            db.commit()
-            db.refresh(message)
+            message_id, created_at = await run_db(
+                session_factory, lambda db: save_message(db, room_id, user.id, content)
+            )
 
             await manager.broadcast(
                 room_id,
                 {
-                    "id": message.id,
+                    "id": message_id,
                     "room_id": room_id,
                     "user_id": user.id,
                     "display_name": user.display_name,
-                    "content": message.content,
-                    "created_at": message.created_at.isoformat(),
+                    "content": content,
+                    "created_at": created_at.isoformat(),
                 },
             )
     finally:

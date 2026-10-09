@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
@@ -42,6 +42,8 @@ class Room(Base):
 
 class Message(Base):
     __tablename__ = "messages"
+    # History pages through one room's messages by id.
+    __table_args__ = (Index("ix_messages_room_id_id", "room_id", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     room_id: Mapped[int] = mapped_column(ForeignKey("rooms.id"), nullable=False)

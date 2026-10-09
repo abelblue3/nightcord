@@ -156,6 +156,12 @@ export async function getRoomMessages(roomId, { before } = {}) {
   return request(`/rooms/${roomId}/messages${query}`, { auth: true });
 }
 
+// Clerk session tokens last about a minute, and the server closes a chat
+// socket a minute after its token runs out ("session-expired", which the page
+// treats like any dropped connection), so an open socket keeps sending the
+// current one.
+export const REAUTH_INTERVAL_MS = 40_000;
+
 // Browsers can't put an Authorization header on a WebSocket, so the session
 // token goes in the first message instead (never the URL, which ends up in
 // logs). The token is fetched before connecting and sent from the first
@@ -167,8 +173,18 @@ export async function connectRoomSocket(roomId) {
   const query = params.toString();
 
   const socket = new WebSocket(`${wsBaseUrl()}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
+  let reauthTimer;
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({ type: 'auth', token }));
+    reauthTimer = setInterval(async () => {
+      try {
+        socket.send(JSON.stringify({ type: 'auth', token: await getSessionToken() }));
+      } catch {
+        // No fresh token (offline?): the server ends the socket once the old
+        // one runs out, and the page reconnects.
+      }
+    }, REAUTH_INTERVAL_MS);
   });
+  socket.addEventListener('close', () => clearInterval(reauthTimer));
   return socket;
 }

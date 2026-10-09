@@ -9,100 +9,105 @@ beforeEach(() => {
 });
 
 describe('getTheme', () => {
-  it('defaults to light when nothing is stored', () => {
-    expect(getTheme()).toBe('light');
+  it('defaults to night when nothing is stored', () => {
+    expect(getTheme()).toBe('night');
   });
 
   it('returns a remembered theme', () => {
-    localStorage.setItem('nightcord_theme', 'dark');
-    expect(getTheme()).toBe('dark');
+    localStorage.setItem('nightcord_theme', 'lamp');
+    expect(getTheme()).toBe('lamp');
   });
 
   it("prefers this visit's choice over a remembered one", () => {
-    localStorage.setItem('nightcord_theme', 'dark');
-    sessionStorage.setItem('nightcord_theme', 'light');
-    expect(getTheme()).toBe('light');
+    localStorage.setItem('nightcord_theme', 'lamp');
+    sessionStorage.setItem('nightcord_theme', 'night');
+    expect(getTheme()).toBe('night');
+  });
+
+  it('treats anything else saved (e.g. the old light/dark values) as night', () => {
+    localStorage.setItem('nightcord_theme', 'light');
+    expect(getTheme()).toBe('night');
   });
 });
 
 describe('applyTheme', () => {
-  it('sets data-theme=dark on <html> for dark', () => {
-    applyTheme('dark');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+  it('sets data-theme=lamp on <html> for lamp', () => {
+    applyTheme('lamp');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('lamp');
   });
 
-  it('removes the attribute entirely for light (so it never overrides CSS)', () => {
-    document.documentElement.setAttribute('data-theme', 'dark');
-    applyTheme('light');
+  it('removes the attribute entirely for night, the default palette', () => {
+    document.documentElement.setAttribute('data-theme', 'lamp');
+    applyTheme('night');
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 });
 
 describe('setTheme and the Preferences consent', () => {
   it('without consent, the theme lasts for this visit only', () => {
-    setTheme('dark');
-    expect(sessionStorage.getItem('nightcord_theme')).toBe('dark');
+    setTheme('lamp');
+    expect(sessionStorage.getItem('nightcord_theme')).toBe('lamp');
     expect(localStorage.getItem('nightcord_theme')).toBeNull();
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('lamp');
   });
 
   it('with consent, the theme is remembered between visits', () => {
     saveConsent({ preferences: true });
-    setTheme('dark');
-    expect(localStorage.getItem('nightcord_theme')).toBe('dark');
+    setTheme('lamp');
+    expect(localStorage.getItem('nightcord_theme')).toBe('lamp');
     expect(sessionStorage.getItem('nightcord_theme')).toBeNull();
   });
 
   it('withdrawing consent stops remembering it (but keeps it for this visit)', () => {
     saveConsent({ preferences: true });
-    setTheme('dark');
+    setTheme('lamp');
 
     saveConsent({ preferences: false });
 
     expect(localStorage.getItem('nightcord_theme')).toBeNull();
-    expect(sessionStorage.getItem('nightcord_theme')).toBe('dark');
-    expect(getTheme()).toBe('dark');
+    expect(sessionStorage.getItem('nightcord_theme')).toBe('lamp');
+    expect(getTheme()).toBe('lamp');
   });
 
   it('granting consent later starts remembering the current theme', () => {
-    setTheme('dark');
+    setTheme('lamp');
     saveConsent({ preferences: true });
-    expect(localStorage.getItem('nightcord_theme')).toBe('dark');
+    expect(localStorage.getItem('nightcord_theme')).toBe('lamp');
   });
 });
 
 describe('initThemeToggle', () => {
-  it('renders the moon glyph for light mode and toggles to sun on click', () => {
+  it('is a Lamp switch: off at first, on (pressed) after a click', () => {
     const btn = document.createElement('button');
     initThemeToggle(btn);
 
-    expect(btn.textContent).toBe('☾');
-    expect(getTheme()).toBe('light');
+    expect(btn.textContent).toBe('Lamp');
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
 
     btn.click();
 
-    expect(getTheme()).toBe('dark');
-    expect(btn.textContent).toBe('☀');
-    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(getTheme()).toBe('lamp');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
+    expect(document.documentElement.getAttribute('data-theme')).toBe('lamp');
   });
 
-  it('toggles back to light on a second click', () => {
+  it('switches back to night on a second click', () => {
     const btn = document.createElement('button');
     initThemeToggle(btn);
 
     btn.click();
     btn.click();
 
-    expect(getTheme()).toBe('light');
-    expect(btn.textContent).toBe('☾');
+    expect(getTheme()).toBe('night');
+    expect(btn.getAttribute('aria-pressed')).toBe('false');
     expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
   });
 
   it('picks up a theme already set before init (e.g. by the head script)', () => {
-    setTheme('dark');
+    setTheme('lamp');
     const btn = document.createElement('button');
     initThemeToggle(btn);
 
-    expect(btn.textContent).toBe('☀');
+    expect(btn.getAttribute('aria-pressed')).toBe('true');
   });
 });

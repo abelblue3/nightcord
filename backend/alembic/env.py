@@ -21,6 +21,17 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Pre-Clerk sign-in columns the database keeps until a migration drops them;
+# the models no longer have them, so `alembic check` skips them. Delete this
+# (and include_object) along with that migration.
+LEGACY_USER_COLUMNS = {"hashed_password", "google_id", "failed_login_attempts", "lockout_until", "token_version"}
+
+
+def include_object(obj, name, type_, reflected, compare_to):
+    if type_ == "column" and obj.table.name == "users" and name in LEGACY_USER_COLUMNS:
+        return False
+    return not (type_ == "index" and name == "ix_users_google_id")
+
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
 # my_important_option = config.get_main_option("my_important_option")
@@ -66,7 +77,7 @@ def run_migrations_online() -> None:
 
     with connectable.connect() as connection:
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection, target_metadata=target_metadata, include_object=include_object
         )
 
         with context.begin_transaction():

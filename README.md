@@ -14,21 +14,31 @@ to study alongside fellow college students without the daytime crowd.
 ## Status
 
 Text chat is live; video is not built yet. The frontend is a lightweight,
-fast-loading retro 8-bit/arcade-style UI with light and dark modes.
+fast-loading retro 8-bit/arcade-style UI with two dark themes, Night and Lamp.
 
 ## How it fits together
 
+In production:
+
 ```
-Browser ──> web/      Ruby (Sinatra on Falcon): serves the pages, carries /api
-                      (HTTP + chat WebSockets) through, logs each request
-              └──> backend/  Python (FastAPI): accounts, night gate, rooms, chat
-                               └──> PostgreSQL
+Browser ──> Vercel     the pages (frontend/, built into static files)
+Browser ──> backend/   Python (FastAPI) on Railway, called directly:
+                       accounts, night gate, rooms, chat WebSockets
+                         └──> PostgreSQL
+```
+
+Locally, one more layer sits in front so pages and API share one address:
+
+```
+Browser ──> Vite ──> web/  Ruby (Sinatra on Falcon): serves the pages, carries
+                           /api (HTTP + chat WebSockets) through
+                             └──> backend/ ──> PostgreSQL
 ```
 
 - **`frontend/`** — the pages (vanilla JS + Vite), built into static files.
-- **`web/`** — the only thing the browser talks to, so pages and API share
-  one domain. No business logic. See [web/README.md](web/README.md) for
-  exactly what passes through it.
+- **`web/`** — local development entry point, and the path CI's end-to-end
+  test takes. No business logic; not deployed (it can be — see
+  [web/README.md](web/README.md)).
 - **`backend/`** — all the rules and data.
 - **[Clerk](https://clerk.com)** — accounts: sign-up, sign-in, the emailed
   code that proves a student owns their address, Google sign-in, and
@@ -167,8 +177,10 @@ no session cookie, and ordinary requests never call Clerk.
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
 - `WS /ws/rooms/{room_id}` — realtime chat over WebSocket. The first message must be
   `{"type": "auth", "token": "<Clerk session token>"}` (browsers can't set
-  headers on WebSockets); refusals close with a reason such as `unauthorized`
-  or `gate-closed:<timezone>`
+  headers on WebSockets), and the page sends the current token again every 40
+  seconds. The socket closes with a reason the page acts on: `unauthorized`,
+  `gate-closed:<timezone>` (also at 6am while connected), or `session-expired`
+  (no fresher token within a minute of the last one expiring)
 - `GET /health` — health check
 
 ### Night gate
@@ -217,7 +229,7 @@ external services or `.env` file. Set `TEST_DATABASE_URL` to run the same suite 
 ## Frontend
 
 Stack: vanilla HTML/CSS/JS + Vite, no framework — self-hosted retro pixel
-fonts, dark mode, and a "closed" screen with a countdown whenever the
+fonts, Night and Lamp themes, and a "closed" screen with a countdown whenever the
 server-side night gate says rooms are shut.
 
 ### Setup
