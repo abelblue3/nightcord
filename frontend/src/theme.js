@@ -36,9 +36,28 @@ window.addEventListener(CONSENT_EVENT, () => {
   if (current) setTheme(current);
 });
 
-// A "Lamp" switch: pressed (and lit) while Lamp is on.
+// A 12x12 pixel-art desk lamp. Its bulb and rays light up while Lamp is on
+// (colors in style.css). Static markup -- no user content goes in here.
+const LAMP_ICON = `<svg class="lamp-icon" viewBox="0 0 12 12" width="24" height="24" shape-rendering="crispEdges" aria-hidden="true" focusable="false">
+  <rect x="3" y="0" width="6" height="1"/>
+  <rect x="2" y="1" width="8" height="1"/>
+  <rect x="1" y="2" width="10" height="1"/>
+  <rect class="lamp-bulb" x="5" y="3" width="2" height="1"/>
+  <rect class="lamp-light" x="4" y="3" width="1" height="1"/>
+  <rect class="lamp-light" x="7" y="3" width="1" height="1"/>
+  <rect class="lamp-light" x="1" y="4" width="1" height="1"/>
+  <rect class="lamp-light" x="0" y="5" width="1" height="1"/>
+  <rect class="lamp-light" x="10" y="4" width="1" height="1"/>
+  <rect class="lamp-light" x="11" y="5" width="1" height="1"/>
+  <rect x="5" y="4" width="2" height="6"/>
+  <rect x="3" y="10" width="6" height="1"/>
+  <rect x="2" y="11" width="8" height="1"/>
+</svg>`;
+
+// The Lamp switch: pressed, with the lamp lit, while Lamp is on.
 export function initThemeToggle(buttonEl) {
-  buttonEl.textContent = 'Lamp';
+  buttonEl.innerHTML = LAMP_ICON;
+  buttonEl.setAttribute('aria-label', 'Lamp');
   buttonEl.title = 'Lamp: warmer colors';
 
   function render() {

@@ -78,7 +78,8 @@ beforeEach(() => {
   els = {
     joinButton: button('join'),
     panel,
-    grid: document.createElement('div'),
+    layer: document.createElement('div'),
+    taskbar: document.createElement('div'),
     cameraButton: button('camera'),
     micButton: button('mic'),
     leaveButton: button('leave'),
@@ -89,27 +90,46 @@ beforeEach(() => {
 });
 
 describe('the room video call', () => {
-  it('joins with camera and mic off, showing your own tile', async () => {
+  it('joins with camera and mic off, showing your own window', async () => {
     const room = await join();
 
     expect(room.connect).toHaveBeenCalledWith('wss://test.livekit.cloud', 'join-token');
     expect(room.localParticipant.setCameraEnabled).not.toHaveBeenCalled();
     expect(room.localParticipant.setMicrophoneEnabled).not.toHaveBeenCalled();
-    expect(els.grid.textContent).toContain('You');
+    expect(els.layer.textContent).toContain('You');
     expect(els.joinButton.hidden).toBe(true);
   });
 
-  it('adds and removes a tile as others come and go, with their video', async () => {
+  it('gives each person their own window, with their video, and removes it when they leave', async () => {
     const room = await join();
     const sam = { identity: '2', name: 'Sam' };
 
     room.emit('participantConnected', sam);
     room.emit('trackSubscribed', fakeTrack('video'), {}, sam);
-    expect(els.grid.textContent).toContain('Sam');
-    expect(els.grid.querySelectorAll('video')).toHaveLength(1);
+    expect(els.layer.textContent).toContain('Sam');
+    expect(els.layer.querySelectorAll('video')).toHaveLength(1);
 
     room.emit('participantDisconnected', sam);
-    expect(els.grid.textContent).not.toContain('Sam');
+    expect(els.layer.textContent).not.toContain('Sam');
+  });
+
+  it('hiding a window puts it on the taskbar, and the taskbar brings it back', async () => {
+    const room = await join();
+    room.emit('participantConnected', { identity: '2', name: 'Sam' });
+    const samWindow = [...els.layer.children].find((w) => w.textContent.includes('Sam'));
+
+    samWindow.querySelector('[aria-label="Hide Sam"]').click();
+    expect(samWindow.hidden).toBe(true);
+    const restore = els.taskbar.querySelector('button');
+    expect(restore.textContent).toBe('Sam');
+
+    restore.click();
+    expect(samWindow.hidden).toBe(false);
+    expect(els.taskbar.children).toHaveLength(0);
+
+    samWindow.querySelector('[aria-label="Hide Sam"]').click();
+    els.leaveButton.click();
+    expect(els.taskbar.children).toHaveLength(0);
   });
 
   it('camera and mic are switches that only ask for their own device', async () => {
@@ -143,7 +163,7 @@ describe('the room video call', () => {
     expect(room.disconnect).toHaveBeenCalled();
     expect(els.panel.hidden).toBe(true);
     expect(els.joinButton.hidden).toBe(false);
-    expect(els.grid.children).toHaveLength(0);
+    expect(els.layer.children).toHaveLength(0);
   });
 
   it('reports a refused join (e.g. the night gate) to the page', async () => {

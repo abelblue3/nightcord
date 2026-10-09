@@ -138,10 +138,6 @@ export async function checkSignupEmail(email) {
   return request('/auth/check-email', { method: 'POST', body: { email } });
 }
 
-export async function logoutAllDevices() {
-  return request('/auth/logout-all', { method: 'POST', auth: true });
-}
-
 export async function listRooms() {
   return request('/rooms', { auth: true });
 }

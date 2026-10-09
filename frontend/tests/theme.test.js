@@ -81,7 +81,8 @@ describe('initThemeToggle', () => {
     const btn = document.createElement('button');
     initThemeToggle(btn);
 
-    expect(btn.textContent).toBe('Lamp');
+    expect(btn.getAttribute('aria-label')).toBe('Lamp'); // the visible label is a pixel-art lamp
+    expect(btn.querySelector('svg.lamp-icon')).not.toBeNull();
     expect(btn.getAttribute('aria-pressed')).toBe('false');
 
     btn.click();

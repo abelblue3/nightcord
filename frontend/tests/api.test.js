@@ -18,7 +18,6 @@ import {
   requireAuth,
   signOut,
   startSession,
-  logoutAllDevices,
   listRooms,
   createRoom,
   connectRoomSocket,
@@ -173,15 +172,6 @@ describe('request wrapper', () => {
     const [url, options] = global.fetch.mock.calls[0];
     expect(url).toContain('/rooms');
     expect(JSON.parse(options.body)).toEqual({ name: 'calc' });
-  });
-
-  it('logoutAllDevices posts to /auth/logout-all', async () => {
-    mockFetchOnce(200, { message: 'Signed out of all devices.' });
-    await logoutAllDevices();
-
-    const [url, options] = global.fetch.mock.calls[0];
-    expect(url).toContain('/auth/logout-all');
-    expect(options.method).toBe('POST');
   });
 });
 

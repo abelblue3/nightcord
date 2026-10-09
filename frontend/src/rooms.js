@@ -1,6 +1,6 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, signOut, listRooms, createRoom, logoutAllDevices } from './api.js';
+import { requireAuth, getUser, signOut, listRooms, createRoom } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
@@ -24,22 +24,10 @@ async function init() {
   document.getElementById('user-tag').textContent = user?.display_name ? `hi, ${user.display_name}` : '';
 
   const logoutBtn = document.getElementById('logout-btn');
-  const logoutAllBtn = document.getElementById('logout-all-btn');
 
   logoutBtn.addEventListener('click', () => {
     setBusy(logoutBtn, 'LOGGING OUT...');
     signOut();
-  });
-
-  logoutAllBtn.addEventListener('click', async () => {
-    setBusy(logoutAllBtn, 'LOGGING OUT...');
-    try {
-      await logoutAllDevices();
-    } catch {
-      // Sign this browser out either way -- a failed request shouldn't strand someone.
-    } finally {
-      await signOut();
-    }
   });
 
   function showError(message) {

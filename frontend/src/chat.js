@@ -4,10 +4,55 @@ import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket } fro
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
+import { createWindow } from './floatingWindow.js';
 import { loadingLine, setBusy } from './ui.js';
 import { initVideo } from './video.js';
 
 init();
+
+// The chat lives in a Win95-style window like the video ones. It opens right
+// where the chat sits in the page (which keeps its space), and while it's
+// hidden, its taskbar button counts the messages that arrive.
+function openChatWindow(title, taskbar) {
+  const content = document.getElementById('chat-content');
+  const spot = content.getBoundingClientRect();
+  let taskbarButton = null;
+  let unread = 0;
+  const label = () => (unread ? `Chat (${unread})` : 'Chat');
+
+  const win = createWindow({
+    title,
+    className: 'chat-window',
+    at: { left: spot.left, top: spot.top },
+    onHide: () => {
+      taskbarButton = document.createElement('button');
+      taskbarButton.type = 'button';
+      taskbarButton.className = 'taskbar-button';
+      taskbarButton.textContent = label();
+      taskbarButton.addEventListener('click', () => {
+        win.show();
+        taskbarButton.remove();
+        taskbarButton = null;
+        unread = 0;
+      });
+      taskbar.appendChild(taskbarButton);
+    },
+  });
+
+  const placeholder = document.createElement('div');
+  content.replaceWith(placeholder);
+  win.body.appendChild(content);
+  document.querySelector('.screen').appendChild(win.element);
+  placeholder.style.height = `${win.element.offsetHeight}px`;
+
+  return {
+    noteMessage() {
+      if (!win.element.hidden) return;
+      unread += 1;
+      taskbarButton.textContent = label();
+    },
+  };
+}
 
 async function init() {
   initConsentBanner();
@@ -29,6 +74,9 @@ async function init() {
   }
 
   document.getElementById('room-title').textContent = roomName.toUpperCase();
+
+  const taskbar = document.getElementById('taskbar');
+  const chatWindow = openChatWindow(roomName.toUpperCase(), taskbar);
 
   document.getElementById('logout-btn').addEventListener('click', signOut);
 
@@ -136,7 +184,8 @@ async function init() {
   const video = initVideo(roomId, {
     joinButton: document.getElementById('video-join'),
     panel: document.getElementById('video-panel'),
-    grid: document.getElementById('video-grid'),
+    layer: document.getElementById('video-layer'),
+    taskbar,
     cameraButton: document.getElementById('video-camera'),
     micButton: document.getElementById('video-mic'),
     leaveButton: document.getElementById('video-leave'),
@@ -166,6 +215,7 @@ async function init() {
     socket.addEventListener('message', (event) => {
       const data = JSON.parse(event.data);
       appendMessage(data);
+      chatWindow.noteMessage();
     });
 
     socket.addEventListener('close', (event) => {
