@@ -1,3 +1,7 @@
+import time
+from datetime import datetime, timedelta, timezone
+
+import jwt
 import pytest
 
 
@@ -98,3 +102,65 @@ def test_history_page_size_is_capped(client, logged_in_room_user):
     room = client.post("/rooms", json={"name": "cap-room"}).json()
     assert client.get(f"/rooms/{room['id']}/messages", params={"limit": 100}).status_code == 200
     assert client.get(f"/rooms/{room['id']}/messages", params={"limit": 101}).status_code == 422
+
+
+# --- video join tokens ---
+
+TEST_LIVEKIT_SECRET = "test-livekit-secret-that-is-long-enough"
+
+
+@pytest.fixture()
+def livekit_configured(monkeypatch):
+    monkeypatch.setattr("app.routers.rooms.settings.livekit_url", "wss://test.livekit.cloud")
+    monkeypatch.setattr("app.routers.rooms.settings.livekit_api_key", "test-key")
+    monkeypatch.setattr("app.routers.rooms.settings.livekit_api_secret", TEST_LIVEKIT_SECRET)
+
+
+def test_video_token_requires_sign_in(client, livekit_configured):
+    assert client.post("/rooms/1/video-token").status_code == 401
+
+
+def test_video_token_for_a_room(client, logged_in_room_user, livekit_configured):
+    room = client.post("/rooms", json={"name": "video-room"}).json()
+
+    res = client.post(f"/rooms/{room['id']}/video-token")
+
+    assert res.status_code == 200
+    assert res.json()["url"] == "wss://test.livekit.cloud"
+    claims = jwt.decode(res.json()["token"], TEST_LIVEKIT_SECRET, algorithms=["HS256"])
+    assert claims["name"] == "Room User"
+    assert claims["video"]["room"] == f"room-{room['id']}"
+    assert claims["video"]["roomJoin"] is True
+    assert claims["video"]["canPublishSources"] == ["camera", "microphone"]
+    assert claims["video"]["canPublishData"] is False
+    # The always_night fixture puts 6am a day away; the token stops there.
+    assert claims["exp"] <= time.time() + 24 * 3600 + 5
+
+
+def test_video_token_stops_at_6am(client, logged_in_room_user, livekit_configured, monkeypatch):
+    room = client.post("/rooms", json={"name": "video-morning"}).json()
+    six_am = datetime.now(timezone.utc) + timedelta(minutes=10)
+    monkeypatch.setattr("app.gate.night_ends_at", lambda tz_name, now=None: six_am)
+
+    token = client.post(f"/rooms/{room['id']}/video-token").json()["token"]
+
+    exp = jwt.decode(token, TEST_LIVEKIT_SECRET, algorithms=["HS256"])["exp"]
+    assert abs(exp - six_am.timestamp()) < 5
+
+
+def test_video_token_blocked_outside_night(client, logged_in_room_user, livekit_configured, monkeypatch):
+    room = client.post("/rooms", json={"name": "video-daytime"}).json()
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
+    assert client.post(f"/rooms/{room['id']}/video-token").status_code == 403
+
+
+def test_video_token_404_for_missing_room(client, logged_in_room_user, livekit_configured):
+    assert client.post("/rooms/999999/video-token").status_code == 404
+
+
+def test_video_token_503_when_video_isnt_set_up(client, logged_in_room_user, monkeypatch):
+    room = client.post("/rooms", json={"name": "video-off"}).json()
+    monkeypatch.setattr("app.routers.rooms.settings.livekit_api_secret", "")
+    res = client.post(f"/rooms/{room['id']}/video-token")
+    assert res.status_code == 503
+    assert res.json()["detail"] == "Video isn't set up yet."

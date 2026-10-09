@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     clerk_jwt_key: str = ""
     clerk_api_url: str = "https://api.clerk.com/v1"
     campus_time_api_url: str = "https://campus-time.replit.app"
+    # LiveKit Cloud carries room video and audio; nightcord only signs join
+    # tokens. Empty means video is switched off.
+    livekit_url: str = ""
+    livekit_api_key: str = ""
+    livekit_api_secret: str = ""
     sentry_dsn: str = ""
     # Secure by default: a deploy that forgets to set ENVIRONMENT must not get
     # the dev-only gate bypass or public API docs.

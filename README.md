@@ -175,6 +175,9 @@ no session cookie, and ordinary requests never call Clerk.
   device (signing out of one browser happens in Clerk on the frontend)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
+- `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);
+  it expires at 6am at the student's school and allows camera and mic only. Needs `LIVEKIT_URL`,
+  `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`; without them it returns 503
 - `WS /ws/rooms/{room_id}` — realtime chat over WebSocket. The first message must be
   `{"type": "auth", "token": "<Clerk session token>"}` (browsers can't set
   headers on WebSockets), and the page sends the current token again every 40

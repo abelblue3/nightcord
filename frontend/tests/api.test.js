@@ -23,6 +23,7 @@ import {
   createRoom,
   connectRoomSocket,
   getRoomMessages,
+  getVideoToken,
   checkSignupEmail,
   syncConsent,
   REAUTH_INTERVAL_MS,
@@ -343,6 +344,20 @@ describe('getRoomMessages', () => {
     mockFetchOnce(200, []);
     await getRoomMessages(7, { before: 123 });
     expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?before=123$/);
+  });
+});
+
+describe('getVideoToken', () => {
+  it("asks the backend for the room's video join token, signed in", async () => {
+    mockFetchOnce(200, { url: 'wss://x.livekit.cloud', token: 't' });
+
+    const result = await getVideoToken(7);
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toMatch(/\/rooms\/7\/video-token$/);
+    expect(options.method).toBe('POST');
+    expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
+    expect(result).toEqual({ url: 'wss://x.livekit.cloud', token: 't' });
   });
 });
 

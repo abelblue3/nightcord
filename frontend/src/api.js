@@ -156,6 +156,11 @@ export async function getRoomMessages(roomId, { before } = {}) {
   return request(`/rooms/${roomId}/messages${query}`, { auth: true });
 }
 
+// A LiveKit token for the room's video call (see video.js).
+export async function getVideoToken(roomId) {
+  return request(`/rooms/${roomId}/video-token`, { method: 'POST', auth: true });
+}
+
 // Clerk session tokens last about a minute, and the server closes a chat
 // socket a minute after its token runs out ("session-expired", which the page
 // treats like any dropped connection), so an open socket keeps sending the

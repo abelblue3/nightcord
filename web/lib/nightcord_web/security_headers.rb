@@ -10,6 +10,11 @@ module NightcordWeb
     CLOUDFLARE_CHALLENGES = "https://challenges.cloudflare.com".freeze
     CLERK_PROTECT = "https://*.protect.clerk.com".freeze
     CLERK_IMAGES = "https://img.clerk.com".freeze
+    # LiveKit Cloud carries room video and audio.
+    LIVEKIT = ["https://*.livekit.cloud", "wss://*.livekit.cloud"].freeze
+    # Only nightcord's own pages may ask for the camera or mic (not frames
+    # like Clerk's bot check), and nothing may capture the screen.
+    PERMISSIONS_POLICY = "camera=(self), microphone=(self), display-capture=()".freeze
 
     # clerk_frontend_api: the Clerk instance's Frontend API host, which serves
     # Clerk's script and handles sign-in (e.g. "*.clerk.accounts.dev" for a
@@ -18,7 +23,7 @@ module NightcordWeb
       @app = app
       clerk = "https://#{clerk_frontend_api}"
 
-      connect_src = ["'self'", clerk, "#{CLERK_PROTECT}:*", SENTRY_INGEST]
+      connect_src = ["'self'", clerk, "#{CLERK_PROTECT}:*", SENTRY_INGEST, *LIVEKIT]
       # Older Safari doesn't count wss: on the same host as 'self'.
       connect_src << "wss://#{public_host}" if public_host
 
@@ -42,6 +47,7 @@ module NightcordWeb
         "x-content-type-options" => "nosniff",
         "x-frame-options" => "DENY",
         "referrer-policy" => "strict-origin-when-cross-origin",
+        "permissions-policy" => PERMISSIONS_POLICY,
       }
       @headers["strict-transport-security"] = "max-age=63072000; includeSubDomains; preload" if hsts
     end

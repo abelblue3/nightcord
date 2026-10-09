@@ -5,6 +5,7 @@ import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
 import { loadingLine, setBusy } from './ui.js';
+import { initVideo } from './video.js';
 
 init();
 
@@ -132,6 +133,17 @@ async function init() {
     }
   });
 
+  const video = initVideo(roomId, {
+    joinButton: document.getElementById('video-join'),
+    panel: document.getElementById('video-panel'),
+    grid: document.getElementById('video-grid'),
+    cameraButton: document.getElementById('video-camera'),
+    micButton: document.getElementById('video-mic'),
+    leaveButton: document.getElementById('video-leave'),
+    notice: document.getElementById('video-notice'),
+    onError: handleHistoryError, // the same closed-screen / error-box handling
+  });
+
   let socket;
   let reconnectTimer = null;
 
@@ -159,11 +171,13 @@ async function init() {
     socket.addEventListener('close', (event) => {
       const gateClosedMatch = /^gate-closed:(.+)$/.exec(event.reason || '');
       if (gateClosedMatch) {
+        video.leave();
         renderClosedScreen(document.querySelector('.screen'), gateClosedMatch[1]);
         return;
       }
       if (event.reason === 'unauthorized') {
         // The session ended (e.g. "log out of all devices" elsewhere).
+        video.leave();
         signOut();
         return;
       }
