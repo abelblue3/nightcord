@@ -1,4 +1,5 @@
 import { getVideoToken } from './api.js';
+import { createWindow } from './floatingWindow.js';
 import { setBusy } from './ui.js';
 
 // A room's video call, next to its chat. LiveKit carries the video and audio;
@@ -15,34 +16,48 @@ const DEVICE_HELP = {
   NotReadableError: (device) => `Another app is using the ${device}. Close it and try again.`,
 };
 
-export function initVideo(roomId, { joinButton, panel, grid, cameraButton, micButton, leaveButton, notice, onError }) {
+export function initVideo(roomId, { joinButton, panel, layer, taskbar, cameraButton, micButton, leaveButton, notice, onError }) {
   let room = null;
-  const tiles = new Map(); // participant identity -> tile
+  // participant identity -> their window, plus its taskbar button while hidden
+  const windows = new Map();
 
-  function tileFor(participant, label) {
-    let tile = tiles.get(participant.identity);
-    if (!tile) {
-      tile = document.createElement('div');
-      tile.className = 'video-tile';
-      const name = document.createElement('span');
-      name.className = 'video-name';
-      name.textContent = label || participant.name || 'someone';
-      tile.appendChild(name);
-      grid.appendChild(tile);
-      tiles.set(participant.identity, tile);
+  // Each person gets their own draggable window. Hiding one is only for you:
+  // their audio keeps playing, and their taskbar button brings it back.
+  function windowFor(participant, label) {
+    let entry = windows.get(participant.identity);
+    if (!entry) {
+      entry = {};
+      entry.win = createWindow({
+        title: label || participant.name || 'someone',
+        onHide: () => {
+          entry.taskbarButton = document.createElement('button');
+          entry.taskbarButton.type = 'button';
+          entry.taskbarButton.className = 'taskbar-button';
+          entry.taskbarButton.textContent = entry.win.title;
+          entry.taskbarButton.addEventListener('click', () => {
+            entry.win.show();
+            entry.taskbarButton.remove();
+          });
+          taskbar.appendChild(entry.taskbarButton);
+        },
+      });
+      layer.appendChild(entry.win.element);
+      windows.set(participant.identity, entry);
     }
-    return tile;
+    return entry.win;
   }
 
-  function removeTile(participant) {
-    tiles.get(participant.identity)?.remove();
-    tiles.delete(participant.identity);
+  function removeWindow(participant) {
+    const entry = windows.get(participant.identity);
+    entry?.win.remove();
+    entry?.taskbarButton?.remove();
+    windows.delete(participant.identity);
   }
 
   function attach(track, participant, label) {
     const element = track.attach();
     if (track.kind === 'audio') element.hidden = true;
-    tileFor(participant, label).prepend(element);
+    windowFor(participant, label).body.prepend(element);
   }
 
   function detach(track) {
@@ -51,8 +66,9 @@ export function initVideo(roomId, { joinButton, panel, grid, cameraButton, micBu
 
   function reset() {
     room = null;
-    tiles.clear();
-    grid.replaceChildren();
+    windows.clear();
+    layer.replaceChildren();
+    taskbar.replaceChildren();
     panel.hidden = true;
     joinButton.hidden = false;
     cameraButton.setAttribute('aria-pressed', 'false');
@@ -67,8 +83,8 @@ export function initVideo(roomId, { joinButton, panel, grid, cameraButton, micBu
       const { Room, RoomEvent } = await import('livekit-client');
       room = new Room();
       room
-        .on(RoomEvent.ParticipantConnected, (participant) => tileFor(participant))
-        .on(RoomEvent.ParticipantDisconnected, removeTile)
+        .on(RoomEvent.ParticipantConnected, (participant) => windowFor(participant))
+        .on(RoomEvent.ParticipantDisconnected, removeWindow)
         .on(RoomEvent.TrackSubscribed, (track, _publication, participant) => attach(track, participant))
         .on(RoomEvent.TrackUnsubscribed, detach)
         // Your own camera shows in your tile; your own mic isn't played back.
@@ -78,8 +94,8 @@ export function initVideo(roomId, { joinButton, panel, grid, cameraButton, micBu
         .on(RoomEvent.LocalTrackUnpublished, (publication) => detach(publication.track))
         .on(RoomEvent.Disconnected, reset);
       await room.connect(url, token);
-      tileFor(room.localParticipant, 'You');
-      for (const participant of room.remoteParticipants.values()) tileFor(participant);
+      windowFor(room.localParticipant, 'You');
+      for (const participant of room.remoteParticipants.values()) windowFor(participant);
       joinButton.hidden = true;
       panel.hidden = false;
     } catch (err) {

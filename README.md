@@ -172,7 +172,9 @@ no session cookie, and ordinary requests never call Clerk.
   creates the nightcord account and returns it. An account that predates Clerk
   is linked by its email, keeping its name, timezone and messages.
 - `POST /auth/logout-all` — ends every Clerk session for the account, on every
-  device (signing out of one browser happens in Clerk on the frontend)
+  device. Kept for a future account-settings page; the site doesn't link to it
+  yet. The pages' **Log out** button signs out only that browser (in Clerk, on
+  the frontend) and clears what nightcord saved there
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
 - `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);

@@ -15,6 +15,13 @@
   --accent: #ffce54;
   --danger: #ff6b5b;
   --good: #4ecb8a;
+  /* Windows 95-style chrome (video windows): face, bevel highlight and
+     shadow, and a solid title bar. */
+  --chrome: #2b2d3e;
+  --chrome-light: #565b78;
+  --chrome-dark: #0b0b12;
+  --titlebar: #1f2f8a;
+  --titlebar-ink: #f2f0e6;
   --border-w: 3px;
   --shadow-off: 4px;
 
@@ -34,6 +41,11 @@
   --accent: #ffd27a;
   --danger: #ff7b5c;
   --good: #9fd17a;
+  --chrome: #3a2b1c;
+  --chrome-light: #6e5539;
+  --chrome-dark: #120c06;
+  --titlebar: #8a4f12;
+  --titlebar-ink: #fff3dc;
 }
 
 * {
@@ -95,6 +107,8 @@ a {
   width: 100%;
   max-width: 720px;
   display: flex;
+  flex-wrap: wrap; /* the buttons drop to a second line on narrow phones */
+  gap: 10px;
   align-items: center;
   justify-content: space-between;
   padding: 12px 18px;
@@ -121,15 +135,28 @@ a {
   gap: 14px;
 }
 
-/* The Lamp switch: lit (accent fill) while Lamp is on. */
-.theme-toggle {
-  font-size: 0.62rem;
-  padding: 8px 10px;
+/* The Lamp switch: a pixel-art lamp whose bulb and rays light up while Lamp
+   is on. */
+.btn.theme-toggle {
+  padding: 3px 8px;
+  line-height: 0;
 }
 
-.theme-toggle[aria-pressed='true'] {
-  background: var(--accent);
-  color: var(--bg);
+.lamp-icon {
+  fill: var(--ink);
+}
+
+.lamp-icon .lamp-bulb {
+  fill: var(--ink-soft);
+}
+
+.lamp-icon .lamp-light {
+  fill: transparent;
+}
+
+.theme-toggle[aria-pressed='true'] .lamp-bulb,
+.theme-toggle[aria-pressed='true'] .lamp-light {
+  fill: var(--accent);
 }
 
 /* --- panels / cards --- */
@@ -447,46 +474,155 @@ a {
   margin-bottom: 16px;
 }
 
-.video-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: 12px;
+/* Each person's video is a Windows 95-style window floating over the page:
+   outset bevels (light top-left, dark bottom-right), inset when pressed. */
+.retro-window {
+  position: fixed;
+  width: 240px;
+  max-width: calc(100vw - 16px);
+  padding: 3px;
+  background: var(--chrome);
+  border: 2px solid;
+  border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
+  box-shadow: 3px 3px 0 var(--chrome-dark);
 }
 
-.video-tile {
-  position: relative;
+.retro-window.is-large {
+  width: 480px;
+}
+
+.retro-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 3px 3px 6px;
+  background: var(--titlebar);
+  color: var(--titlebar-ink);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.retro-titlebar:active {
+  cursor: grabbing;
+}
+
+.retro-titlebar:focus-visible {
+  outline: 2px dotted var(--titlebar-ink);
+  outline-offset: -4px;
+}
+
+.retro-title {
+  font-family: var(--font-display);
+  font-size: 0.55rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.retro-title-buttons {
+  display: flex;
+  flex: none;
+  gap: 2px;
+}
+
+.retro-title-button,
+.taskbar-button {
+  font-family: var(--font-body);
+  color: var(--ink);
+  background: var(--chrome);
+  border: 2px solid;
+  border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.retro-title-button {
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
+.retro-title-button:active,
+.taskbar-button:active {
+  border-color: var(--chrome-dark) var(--chrome-light) var(--chrome-light) var(--chrome-dark);
+}
+
+.retro-body {
+  margin-top: 3px;
   aspect-ratio: 4 / 3;
-  max-width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: var(--panel);
-  border: var(--border-w) solid var(--ink);
-  box-shadow: 3px 3px 0 var(--ink);
+  background: var(--bg);
+  border: 2px solid;
+  border-color: var(--chrome-dark) var(--chrome-light) var(--chrome-light) var(--chrome-dark);
 }
 
-.video-tile:not(:has(video))::before {
+.retro-window.is-minimized .retro-body {
+  display: none;
+}
+
+#video-layer .retro-body:not(:has(video))::before {
   content: 'camera off';
   font-family: var(--font-body);
   color: var(--ink-soft);
 }
 
-.video-tile video {
+.retro-body video {
   width: 100%;
   height: 100%;
   object-fit: cover;
 }
 
-.video-name {
-  position: absolute;
+/* The room chat in the same window chrome: as wide as the chat column,
+   with the chat's own panel inside instead of a 4:3 video well. */
+.chat-window {
+  width: min(720px, calc(100vw - 32px));
+}
+
+.chat-window.is-large {
+  width: min(960px, calc(100vw - 32px));
+}
+
+.chat-window .retro-body {
+  aspect-ratio: auto;
+  display: block;
+  padding: 10px;
+  background: var(--panel);
+}
+
+.chat-window.is-large .chat-log {
+  min-height: 480px;
+  max-height: 72vh;
+}
+
+/* Hidden windows (chat and video) wait here, Windows 95 taskbar style. */
+.taskbar {
+  position: fixed;
   left: 0;
+  right: 0;
   bottom: 0;
-  padding: 2px 8px;
-  font-family: var(--font-body);
+  z-index: 900;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
+  background: var(--chrome);
+  border-top: 2px solid var(--chrome-light);
+}
+
+.taskbar:empty {
+  display: none;
+}
+
+.taskbar-button {
   font-size: 1rem;
-  color: var(--ink);
-  background: var(--bg);
+  padding: 2px 12px;
 }
 
 .video-controls {

@@ -14,7 +14,7 @@
         <span class="logo" id="room-title">ROOM</span>
         <div class="topbar-actions">
           <button class="btn theme-toggle" id="theme-toggle" type="button"></button>
-          <button class="btn btn-small" id="logout-btn" type="button">Logout</button>
+          <button class="btn btn-small" id="logout-btn" type="button">Log out</button>
         </div>
       </div>
 
@@ -24,7 +24,7 @@
           <button type="button" class="btn btn-small" id="video-join">Join video</button>
         </div>
         <section class="video-panel" id="video-panel" aria-label="Video call" hidden>
-          <div class="video-grid" id="video-grid"></div>
+          <div id="video-layer"></div>
           <div class="video-controls">
             <button type="button" class="btn btn-small video-switch" id="video-camera" aria-pressed="false">Camera</button>
             <button type="button" class="btn btn-small video-switch" id="video-mic" aria-pressed="false">Mic</button>
@@ -33,15 +33,18 @@
           <p class="video-hint">Your browser will ask to use your camera or mic. Nothing is shared until you allow it.</p>
           <p class="video-notice" id="video-notice" role="status" aria-live="polite"></p>
         </section>
-        <div class="chat-log" id="chat-log">
-          <button type="button" class="btn btn-small load-earlier" id="load-earlier" hidden>Load earlier</button>
+        <div id="chat-content">
+          <div class="chat-log" id="chat-log">
+            <button type="button" class="btn btn-small load-earlier" id="load-earlier" hidden>Load earlier</button>
+          </div>
+          <div class="connection-status" id="connection-status" role="status" aria-live="polite">connecting…</div>
+          <form class="chat-input-row" id="chat-form">
+            <input type="text" id="chat-input" autocomplete="off" placeholder="say something…" maxlength="2000" />
+            <button type="submit" class="btn btn-primary" id="chat-send">Send</button>
+          </form>
         </div>
-        <div class="connection-status" id="connection-status" role="status" aria-live="polite">connecting…</div>
-        <form class="chat-input-row" id="chat-form">
-          <input type="text" id="chat-input" autocomplete="off" placeholder="say something…" maxlength="2000" />
-          <button type="submit" class="btn btn-primary" id="chat-send">Send</button>
-        </form>
       </div>
+      <div class="taskbar" id="taskbar" aria-label="Hidden windows"></div>
       <footer class="site-footer">
         <a href="/terms.html">Terms</a>
         <span aria-hidden="true">·</span>
