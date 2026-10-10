@@ -177,10 +177,9 @@ def test_first_sign_in_creates_the_account(client, db_session, sign_in):
 
     user = db_session.query(User).filter(User.email == "new.student@harvard.edu").first()
     assert user.clerk_user_id == result.clerk_user_id
-    # Clerk's name is kept privately, and the school comes from the domain.
+    # Clerk's name is kept privately.
     assert user.name == "New"
     assert user.show_name is False
-    assert user.school_name == "Harvard University"
 
 
 def test_signing_in_again_returns_the_same_account(client, db_session, sign_in):

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import clerk_auth
 from app.auth import bearer_scheme, email_domain, get_current_user, is_allowed_student_email, verified_claims
-from app.campus_time import SchoolLookup, find_school_ids, lookup_school, school_name
+from app.campus_time import SchoolLookup, find_school_ids, lookup_school
 from app.database import get_db
 from app.gate import resolve_signup_timezone
 from app.models import User
@@ -91,8 +91,6 @@ def start_session(
         user.clerk_user_id = clerk_user_id
         if user.timezone is None:
             user.timezone = resolve_signup_timezone(school, payload.timezone)
-    if user.school_name is None:
-        user.school_name = school_name(email_domain(email))
     # Their Google/Microsoft photo, if Clerk has a real one. A student who
     # opted into it follows it when it changes (or loses it when it's gone).
     photo = clerk_user.image_url if clerk_user.has_image else None

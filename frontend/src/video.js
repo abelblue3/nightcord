@@ -66,10 +66,10 @@ function deviceButton(device) {
   return button;
 }
 
-export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallChange = () => {} }) {
+export function initVideo(roomId, { joinButton, showButton, layer, onError, onCallChange = () => {} }) {
   let room = null;
-  // participant identity -> their window, plus its taskbar button while hidden
-  const windows = new Map();
+  const windows = new Map(); // participant identity -> { win }
+  const hidden = new Set(); // the windows closed with ×
   let notice = null; // the hint / help line in your own window
 
   function setNotice(text) {
@@ -84,19 +84,18 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallC
     room.disconnect(true);
   }
 
-  // Others' windows: × hides one for you only -- their audio keeps playing,
-  // and their taskbar button brings it back.
-  function hideToTaskbar(entry) {
-    entry.taskbarButton = document.createElement('button');
-    entry.taskbarButton.type = 'button';
-    entry.taskbarButton.className = 'taskbar-button';
-    entry.taskbarButton.textContent = entry.win.title;
-    entry.taskbarButton.addEventListener('click', () => {
-      entry.win.show();
-      entry.taskbarButton.remove();
-    });
-    taskbar.appendChild(entry.taskbarButton);
+  // Others' windows: × closes one for you only -- their audio keeps playing,
+  // and "Show videos (N)" beside "Join video" brings them all back.
+  function renderShowButton() {
+    showButton.textContent = `Show videos (${hidden.size})`;
+    showButton.hidden = hidden.size === 0;
   }
+
+  showButton.addEventListener('click', () => {
+    for (const entry of hidden) entry.win.show();
+    hidden.clear();
+    renderShowButton();
+  });
 
   function ownWindow() {
     const micButton = deviceButton('microphone');
@@ -136,7 +135,10 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallC
         : createWindow({
             title: participant.name || 'someone',
             resize: 'aspect',
-            onHide: () => hideToTaskbar(entry),
+            onHide: () => {
+              hidden.add(entry);
+              renderShowButton();
+            },
           });
       entry.win.body.append(cameraOffCard(participant));
       layer.appendChild(entry.win.element);
@@ -148,7 +150,8 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallC
   function removeWindow(participant) {
     const entry = windows.get(participant.identity);
     entry?.win.remove();
-    entry?.taskbarButton?.remove();
+    hidden.delete(entry);
+    renderShowButton();
     windows.delete(participant.identity);
   }
 
@@ -183,8 +186,9 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallC
     room = null;
     notice = null;
     windows.clear();
+    hidden.clear();
+    renderShowButton();
     layer.replaceChildren();
-    taskbar.replaceChildren();
     joinButton.hidden = false;
     onCallChange(false);
   }

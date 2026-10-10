@@ -35,7 +35,6 @@ class User(Base):
     # The Google/Microsoft photo Clerk has for them (refreshed at each
     # sign-in); used as avatar_url only if they opt in.
     provider_photo_url: Mapped[str | None] = mapped_column(String(500))
-    school_name: Mapped[str | None] = mapped_column(String(200))  # from the email's domain, never typed
     pronouns: Mapped[str | None] = mapped_column(String(20))
     bio: Mapped[str | None] = mapped_column(String(160))
     status: Mapped[str | None] = mapped_column(String(20))

@@ -14,14 +14,14 @@ import { initVideo } from './video.js';
 init();
 
 // The chat lives in a Win95-style window like the video ones. It opens right
-// where the chat sits in the page (which keeps its space), and while it's
-// hidden, its taskbar button counts the messages that arrive.
-function openChatWindow(title, taskbar) {
+// where the chat sits in the page (which keeps its space). × closes it, and
+// "Open chat" beside "Join video" brings it back, counting the messages that
+// arrived meanwhile.
+function openChatWindow(title, openButton) {
   const content = document.getElementById('chat-content');
   const spot = content.getBoundingClientRect();
-  let taskbarButton = null;
   let unread = 0;
-  const label = () => (unread ? `Chat (${unread})` : 'Chat');
+  const label = () => (unread ? `Open chat (${unread})` : 'Open chat');
 
   const win = createWindow({
     title,
@@ -29,18 +29,15 @@ function openChatWindow(title, taskbar) {
     resize: 'free',
     at: { left: spot.left, top: spot.top },
     onHide: () => {
-      taskbarButton = document.createElement('button');
-      taskbarButton.type = 'button';
-      taskbarButton.className = 'taskbar-button';
-      taskbarButton.textContent = label();
-      taskbarButton.addEventListener('click', () => {
-        win.show();
-        taskbarButton.remove();
-        taskbarButton = null;
-        unread = 0;
-      });
-      taskbar.appendChild(taskbarButton);
+      openButton.textContent = label();
+      openButton.hidden = false;
     },
+  });
+
+  openButton.addEventListener('click', () => {
+    win.show();
+    openButton.hidden = true;
+    unread = 0;
   });
 
   const placeholder = document.createElement('div');
@@ -53,7 +50,7 @@ function openChatWindow(title, taskbar) {
     noteMessage() {
       if (!win.element.hidden) return;
       unread += 1;
-      taskbarButton.textContent = label();
+      openButton.textContent = label();
     },
   };
 }
@@ -79,8 +76,7 @@ async function init() {
 
   document.getElementById('room-title').textContent = roomName.toUpperCase();
 
-  const taskbar = document.getElementById('taskbar');
-  const chatWindow = openChatWindow(roomName.toUpperCase(), taskbar);
+  const chatWindow = openChatWindow(roomName.toUpperCase(), document.getElementById('chat-open'));
 
   const avatarMenu = initAvatarMenu(document.getElementById('avatar-menu'));
 
@@ -162,7 +158,7 @@ async function init() {
   const video = initVideo(roomId, {
     joinButton: document.getElementById('video-join'),
     layer: document.getElementById('video-layer'),
-    taskbar,
+    showButton: document.getElementById('videos-show'),
     onError: handleHistoryError, // the same closed-screen / error-box handling
     onCallChange: (inCall) => avatarMenu.setInCall(inCall),
   });
