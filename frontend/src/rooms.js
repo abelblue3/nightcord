@@ -1,6 +1,7 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, signOut, listRooms, createRoom } from './api.js';
+import { requireAuth, getUser, listRooms, createRoom } from './api.js';
+import { initAvatarMenu } from './avatarMenu.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
@@ -21,14 +22,7 @@ async function init() {
   initThemeToggle(document.getElementById('theme-toggle'));
 
   const user = getUser();
-  document.getElementById('user-tag').textContent = user?.display_name ? `hi, ${user.display_name}` : '';
-
-  const logoutBtn = document.getElementById('logout-btn');
-
-  logoutBtn.addEventListener('click', () => {
-    setBusy(logoutBtn, 'LOGGING OUT...');
-    signOut();
-  });
+  initAvatarMenu(document.getElementById('avatar-menu'));
 
   function showError(message) {
     errorBox.textContent = message;

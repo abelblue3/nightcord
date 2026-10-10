@@ -76,6 +76,14 @@ def dev_bypass_active(skip_gate_header: str | None) -> bool:
     return settings.environment == "development" and skip_gate_header == "1"
 
 
+def always_open() -> bool:
+    """Beta stays open around the clock, so it can be tested in the daytime.
+    Opt-in by name like the dev bypass: production, and a deploy that never
+    set ENVIRONMENT, keep the gate.
+    """
+    return settings.environment == "beta"
+
+
 def canary_bypass_active(canary_token_header: str | None) -> bool:
     """The scheduled canary check (.github/workflows/canary.yml) runs 24/7
     against production and never went through signup, so it has no
@@ -100,7 +108,7 @@ def require_night_access(
     history, and the chat WebSocket outside night hours -- computed from the
     user's stored (school-derived) timezone, not anything the client claims.
     """
-    if dev_bypass_active(x_dev_skip_gate) or canary_bypass_active(x_canary_token):
+    if always_open() or dev_bypass_active(x_dev_skip_gate) or canary_bypass_active(x_canary_token):
         return current_user
 
     user_tz = current_user.timezone or FALLBACK_TIMEZONE

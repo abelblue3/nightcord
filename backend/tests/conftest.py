@@ -61,9 +61,11 @@ class FakeClerk:
         self.revoked: list[str] = []
         self.unavailable = False
 
-    def add_user(self, email, *, verified=True, first_name=None, last_name=None) -> str:
+    def add_user(self, email, *, verified=True, first_name=None, last_name=None, photo_url=None) -> str:
         user_id = f"user_test{next(self._ids)}"
-        self.users[user_id] = ClerkUser(user_id, email, verified, first_name, last_name)
+        self.users[user_id] = ClerkUser(
+            user_id, email, verified, first_name, last_name, image_url=photo_url, has_image=photo_url is not None
+        )
         return user_id
 
     def get_user(self, user_id):
@@ -140,8 +142,8 @@ def sign_in(client, fake_clerk):
     nightcord account. The token is then sent on every later request.
     """
 
-    def _sign_in(email="student@university.edu", *, first_name=None, verified=True, timezone=None):
-        clerk_user_id = fake_clerk.add_user(email, verified=verified, first_name=first_name)
+    def _sign_in(email="student@university.edu", *, first_name=None, verified=True, timezone=None, photo_url=None):
+        clerk_user_id = fake_clerk.add_user(email, verified=verified, first_name=first_name, photo_url=photo_url)
         token = make_token(clerk_user_id)
         client.headers["Authorization"] = f"Bearer {token}"
         response = client.post("/auth/session", json={"timezone": timezone})

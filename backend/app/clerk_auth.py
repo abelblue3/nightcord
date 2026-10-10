@@ -94,6 +94,10 @@ class ClerkUser:
     email_verified: bool
     first_name: str | None
     last_name: str | None
+    # Clerk's profile picture; has_image is True only when it's a real photo
+    # (e.g. from Google/Microsoft), not Clerk's generated placeholder.
+    image_url: str | None = None
+    has_image: bool = False
 
     @property
     def full_name(self) -> str:
@@ -131,6 +135,8 @@ def get_user(user_id: str) -> ClerkUser:
         email_verified=verified,
         first_name=data.get("first_name"),
         last_name=data.get("last_name"),
+        image_url=data.get("image_url"),
+        has_image=bool(data.get("has_image")),
     )
 
 

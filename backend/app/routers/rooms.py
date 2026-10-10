@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -95,6 +96,9 @@ def get_video_token(
         livekit.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
         .with_identity(str(current_user.id))
         .with_name(current_user.display_name)
+        # Lets the other windows in the call show this student's avatar while
+        # their camera is off.
+        .with_metadata(json.dumps({"avatar_url": current_user.avatar_url}))
         .with_ttl(night_ends - datetime.now(timezone.utc))
         .with_grants(
             livekit.VideoGrants(

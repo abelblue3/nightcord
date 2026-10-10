@@ -19,11 +19,11 @@ function wsBaseUrl() {
 const USER_KEY = 'nightcord_user';
 
 // Clerk holds the actual session. What's cached here is only what the pages
-// render (id, name, school timezone), so the UI has something to show
-// immediately. The email is deliberately left out: nothing displays it, and
-// anything in localStorage is readable by any script on the page.
-export function saveSession({ id, display_name, timezone }) {
-  localStorage.setItem(USER_KEY, JSON.stringify({ id, display_name, timezone }));
+// render (id, username, school timezone, avatar), so the UI has something to
+// show immediately. The email is deliberately left out: nothing displays it,
+// and anything in localStorage is readable by any script on the page.
+export function saveSession({ id, display_name, timezone, avatar_url }) {
+  localStorage.setItem(USER_KEY, JSON.stringify({ id, display_name, timezone, avatar_url }));
 }
 
 export function getUser() {
@@ -150,6 +150,21 @@ export async function createRoom(name) {
 export async function getRoomMessages(roomId, { before } = {}) {
   const query = before ? `?before=${encodeURIComponent(before)}` : '';
   return request(`/rooms/${roomId}/messages${query}`, { auth: true });
+}
+
+// Profiles need sign-in only (not the night gate), so they work in the daytime.
+export async function getMyProfile() {
+  return request('/me/profile', { auth: true });
+}
+
+export async function updateMyProfile(changes) {
+  const profile = await request('/me/profile', { method: 'PATCH', body: changes, auth: true });
+  saveSession(profile); // the username and avatar the pages show
+  return profile;
+}
+
+export async function getProfile(userId) {
+  return request(`/users/${userId}/profile`, { auth: true });
 }
 
 // A LiveKit token for the room's video call (see video.js).

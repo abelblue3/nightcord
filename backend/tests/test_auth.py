@@ -170,12 +170,17 @@ def test_first_sign_in_creates_the_account(client, db_session, sign_in):
     assert result.response.status_code == 200
     body = result.response.json()
     assert body["email"] == "new.student@harvard.edu"
-    assert body["display_name"] == "New"
+    # The username comes from the email, not the real name (anonymous by default).
+    assert body["display_name"] == "new_student"
     # The school's timezone wins over what the browser claimed.
     assert body["timezone"] == "America/New_York"
 
     user = db_session.query(User).filter(User.email == "new.student@harvard.edu").first()
     assert user.clerk_user_id == result.clerk_user_id
+    # Clerk's name is kept privately, and the school comes from the domain.
+    assert user.name == "New"
+    assert user.show_name is False
+    assert user.school_name == "Harvard University"
 
 
 def test_signing_in_again_returns_the_same_account(client, db_session, sign_in):
@@ -233,9 +238,24 @@ def test_unverified_email_is_rejected(client, fake_clerk, sign_in):
     assert fake_clerk.deleted == []
 
 
-def test_long_names_are_trimmed(client, sign_in):
-    result = sign_in("longname@university.edu", first_name="N" * 150)
-    assert len(result.response.json()["display_name"]) == 100
+def test_usernames_are_valid_and_unique(client, sign_in):
+    first = sign_in("a.very.long.email.address.indeed@university.edu")
+    assert first.response.json()["display_name"] == "a_very_long_email_ad"  # 20 characters at most
+
+    sign_in("Night.Owl@university.edu")
+    second = sign_in("night_owl@other-school.edu")
+    assert second.response.json()["display_name"] == "night_owl2"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [("Abel.Milkrick", "abel_milkrick"), ("a", "a_owl"), ("", "owl"), ("__x__", "x_owl"), ("Ünï", "n_owl")],
+)
+def test_slugify_makes_a_valid_username(text, expected):
+    from app.usernames import USERNAME_PATTERN, slugify
+
+    assert slugify(text) == expected
+    assert USERNAME_PATTERN.fullmatch(slugify(text))
 
 
 def test_session_needs_a_valid_token(client):

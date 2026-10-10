@@ -32,6 +32,9 @@ _DATA_PATH = Path(__file__).parent / "data" / "school_domains.json"
 with open(_DATA_PATH, encoding="utf-8") as f:
     _SCHOOL_IDS_BY_DOMAIN: dict[str, list[str]] = json.load(f)
 
+with open(_DATA_PATH.with_name("school_names.json"), encoding="utf-8") as f:
+    _SCHOOL_NAMES: dict[str, str] = json.load(f)
+
 
 @dataclass(frozen=True)
 class SchoolLookup:
@@ -53,6 +56,13 @@ def find_school_ids(domain: str) -> list[str]:
         if ids:
             return ids
     return []
+
+
+def school_name(domain: str) -> str | None:
+    """The school's name for a student's profile, e.g. "Stanford University"
+    (the first institution, when a domain is shared by several campuses)."""
+    school_ids = find_school_ids(domain)
+    return _SCHOOL_NAMES.get(school_ids[0]) if school_ids else None
 
 
 def fetch_location_timezone(school_id: str) -> str | None:
