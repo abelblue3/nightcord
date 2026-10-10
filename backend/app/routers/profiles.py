@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from app.auth import get_current_user
+from app.auth import email_domain, get_current_user
+from app.campus_time import school_name
 from app.database import get_db
 from app.models import User
 from app.rate_limit import limiter, user_or_ip_key
@@ -15,6 +16,12 @@ TEXT_FIELDS = ("name", "pronouns", "bio", "status", "major", "year")
 LIST_FIELDS = ("interests", "courses")
 
 
+def school_of(user: User) -> str | None:
+    """Always read from the email's domain, so every account has it --
+    including ones that never signed in again after profiles arrived."""
+    return school_name(email_domain(user.email))
+
+
 def own_profile(user: User) -> OwnProfileOut:
     return OwnProfileOut(
         id=user.id,
@@ -24,7 +31,7 @@ def own_profile(user: User) -> OwnProfileOut:
         show_name=user.show_name,
         avatar_url=user.avatar_url,
         photo_url=user.provider_photo_url,
-        school_name=user.school_name,
+        school_name=school_of(user),
         timezone=user.timezone,
         pronouns=user.pronouns,
         bio=user.bio,
@@ -102,7 +109,7 @@ def get_public_profile(
         display_name=person.display_name,
         name=person.name if person.show_name else None,
         avatar_url=person.avatar_url,
-        school_name=person.school_name,
+        school_name=school_of(person),
         pronouns=person.pronouns,
         bio=person.bio,
         status=person.status,

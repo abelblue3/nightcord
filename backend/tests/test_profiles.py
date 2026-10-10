@@ -23,6 +23,15 @@ def test_own_profile_starts_anonymous_with_school_and_timezone(client, sign_in):
     assert profile["email"] == "new.owl@harvard.edu"
 
 
+def test_school_comes_from_the_email_for_every_account(client, sign_in):
+    owner = sign_in("old.bear@berkeley.edu")
+    owner_id = owner.response.json()["id"]
+
+    assert client.get("/me/profile").json()["school_name"] == "University of California-Berkeley"
+    sign_in("viewer.bear@university.edu")
+    assert client.get(f"/users/{owner_id}/profile").json()["school_name"] == "University of California-Berkeley"
+
+
 def test_profile_works_outside_night_hours(client, sign_in, monkeypatch):
     sign_in("daytime@university.edu")
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)

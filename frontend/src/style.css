@@ -896,6 +896,8 @@ a {
 
 .video-bar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
   justify-content: flex-end;
   margin-bottom: 12px;
 }
@@ -911,6 +913,11 @@ a {
   border: 2px solid;
   border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
   box-shadow: 3px 3px 0 var(--chrome-dark);
+}
+
+/* A window's own display (e.g. the chat's flex) must not undo ×. */
+.retro-window[hidden] {
+  display: none;
 }
 
 .retro-titlebar {
@@ -949,8 +956,7 @@ a {
   gap: 2px;
 }
 
-.retro-title-button,
-.taskbar-button {
+.retro-title-button {
   font-family: var(--font-body);
   color: var(--ink);
   background: var(--chrome);
@@ -971,8 +977,7 @@ a {
   line-height: 1;
 }
 
-.retro-title-button:active,
-.taskbar-button:active {
+.retro-title-button:active {
   border-color: var(--chrome-dark) var(--chrome-light) var(--chrome-light) var(--chrome-dark);
 }
 
@@ -1165,30 +1170,6 @@ a {
   display: inline-block;
   margin: 0 16px 16px;
   text-decoration: none;
-}
-
-/* Hidden windows (chat and video) wait here, Windows 95 taskbar style. */
-.taskbar {
-  position: fixed;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 900;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 4px 8px calc(4px + env(safe-area-inset-bottom, 0px));
-  background: var(--chrome);
-  border-top: 2px solid var(--chrome-light);
-}
-
-.taskbar:empty {
-  display: none;
-}
-
-.taskbar-button {
-  font-size: 1rem;
-  padding: 2px 12px;
 }
 
 /* --- misc --- */

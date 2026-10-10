@@ -75,8 +75,8 @@ beforeEach(() => {
   lk.state.cameraError = null;
   const joinButton = document.createElement('button');
   document.body.appendChild(joinButton);
-  els = { joinButton, layer: document.createElement('div'), taskbar: document.createElement('div') };
-  document.body.append(els.layer, els.taskbar);
+  els = { joinButton, showButton: document.createElement('button'), layer: document.createElement('div') };
+  document.body.append(els.showButton, els.layer);
   onError = vi.fn();
   initVideo('7', { ...els, onError });
 });
@@ -184,18 +184,23 @@ describe('the room video call', () => {
     expect(video.element.hidden).toBe(false);
   });
 
-  it("hiding someone else's window puts it on the taskbar, and the taskbar brings it back", async () => {
+  it("× closes someone else's window, and \"Show videos\" brings them back", async () => {
     const room = await join();
     room.emit('participantConnected', { identity: '2', name: 'Sam' });
+    room.emit('participantConnected', { identity: '3', name: 'Kai' });
 
     windowOf('Sam').querySelector('[aria-label="Hide Sam"]').click();
+    windowOf('Kai').querySelector('[aria-label="Hide Kai"]').click();
     expect(windowOf('Sam').hidden).toBe(true);
-    const restore = els.taskbar.querySelector('button');
-    expect(restore.textContent).toBe('Sam');
+    expect(els.showButton.hidden).toBe(false);
+    expect(els.showButton.textContent).toBe('Show videos (2)');
 
-    restore.click();
+    room.emit('participantDisconnected', { identity: '3', name: 'Kai' });
+    expect(els.showButton.textContent).toBe('Show videos (1)');
+
+    els.showButton.click();
     expect(windowOf('Sam').hidden).toBe(false);
-    expect(els.taskbar.children).toHaveLength(0);
+    expect(els.showButton.hidden).toBe(true);
   });
 
   it('× on your own window leaves: devices stopped, page put back as it was', async () => {
@@ -209,7 +214,7 @@ describe('the room video call', () => {
     expect(room.disconnect).toHaveBeenCalledWith(true);
     expect(els.joinButton.hidden).toBe(false);
     expect(els.layer.children).toHaveLength(0);
-    expect(els.taskbar.children).toHaveLength(0);
+    expect(els.showButton.hidden).toBe(true);
   });
 
   it('closing or leaving the page also ends the call', async () => {
