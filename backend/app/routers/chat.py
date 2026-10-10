@@ -188,8 +188,8 @@ async def room_chat(
     # browsers can't set headers on a WebSocket, and it's inert outside dev.)
     canary_token = websocket.headers.get("x-canary-token")
     user_tz = user.timezone or gate.FALLBACK_TIMEZONE
-    gate_closes_at = math.inf  # the dev and canary bypasses never close
-    if not (gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
+    gate_closes_at = math.inf  # beta and the dev and canary bypasses never close
+    if not (gate.always_open() or gate.dev_bypass_active(skip_gate) or gate.canary_bypass_active(canary_token)):
         if not gate.is_night_in_timezone(user_tz):
             await refuse(websocket, f"gate-closed:{user_tz}")
             return
@@ -246,6 +246,7 @@ async def room_chat(
                     "room_id": room_id,
                     "user_id": user.id,
                     "display_name": user.display_name,
+                    "avatar_url": user.avatar_url,
                     "content": content,
                     "created_at": created_at.isoformat(),
                 },

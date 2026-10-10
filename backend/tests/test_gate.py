@@ -196,11 +196,17 @@ def test_rooms_dev_bypass_never_works_in_production(client, logged_in_gate_user,
     assert res.status_code == 403
 
 
-def test_rooms_dev_bypass_never_works_on_beta(client, logged_in_gate_user, monkeypatch):
+def test_beta_is_open_around_the_clock(client, logged_in_gate_user, monkeypatch):
     monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
     monkeypatch.setattr("app.gate.settings.environment", "beta")
-    res = client.get("/rooms", headers={"X-Dev-Skip-Gate": "1"})
-    assert res.status_code == 403
+    assert client.get("/rooms").status_code == 200
+
+
+def test_only_beta_is_open_around_the_clock(client, logged_in_gate_user, monkeypatch):
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
+    for environment in ("production", "staging", "Beta"):
+        monkeypatch.setattr("app.gate.settings.environment", environment)
+        assert client.get("/rooms").status_code == 403, environment
 
 
 def test_rooms_canary_bypass_overrides_closed_gate(client, logged_in_gate_user, monkeypatch):
@@ -241,6 +247,18 @@ def test_websocket_dev_bypass_allows_connection_when_closed(client, logged_in_ga
         ws.send_json({"content": "hello despite closed gate"})
         received = ws.receive_json()
     assert received["content"] == "hello despite closed gate"
+
+
+def test_websocket_on_beta_connects_in_the_daytime(client, logged_in_gate_user, room_socket, monkeypatch):
+    room = client.post("/rooms", json={"name": "gate-ws-beta-room"}).json()
+
+    monkeypatch.setattr("app.gate.is_night_in_timezone", lambda tz, now=None: False)
+    monkeypatch.setattr("app.gate.settings.environment", "beta")
+
+    with room_socket(room["id"]) as ws:
+        ws.send_json({"content": "hello from the daytime"})
+        received = ws.receive_json()
+    assert received["content"] == "hello from the daytime"
 
 
 def test_websocket_canary_bypass_uses_a_header(client, logged_in_gate_user, room_socket, monkeypatch):

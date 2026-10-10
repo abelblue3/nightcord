@@ -403,10 +403,37 @@ a {
   gap: 10px;
 }
 
+/* The avatar beside the name line and the text. */
 .msg {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 2px;
+}
+
+.msg-avatar {
+  grid-row: span 2;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.msg-author {
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.msg-author:hover,
+.msg-author:focus-visible {
+  text-decoration: underline;
+  outline: none;
 }
 
 .msg .msg-meta {
@@ -459,6 +486,411 @@ a {
 
 .connection-status.connected { color: var(--good); }
 .connection-status.disconnected { color: var(--danger); }
+
+/* --- avatars and the avatar menu --- */
+
+/* A photo or pixel person, clipped to a circle under a pixel-art ring. */
+.avatar {
+  position: relative;
+  display: inline-block;
+  flex: none;
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+}
+
+.avatar-photo,
+.avatar-pixel,
+.avatar-ring {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-photo,
+.avatar-pixel {
+  clip-path: circle(44% at 50% 50%);
+  object-fit: cover;
+}
+
+.avatar-ring {
+  fill: var(--ink);
+}
+
+.avatar-person {
+  fill: var(--bg);
+}
+
+.avatar-tint-0 .avatar-bg { fill: var(--primary); }
+.avatar-tint-1 .avatar-bg { fill: var(--good); }
+.avatar-tint-2 .avatar-bg { fill: var(--accent); }
+.avatar-tint-3 .avatar-bg { fill: var(--danger); }
+
+.avatar-menu {
+  position: relative;
+}
+
+.avatar-button {
+  display: flex;
+  padding: 2px;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.avatar-button:focus-visible {
+  outline: 2px dotted var(--ink);
+}
+
+.avatar-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Windows 95-style drop-down: bevelled, highlighted item in title-bar colors. */
+.retro-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 1000;
+  min-width: 160px;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  background: var(--chrome);
+  border: 2px solid;
+  border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
+  box-shadow: 3px 3px 0 var(--chrome-dark);
+}
+
+.retro-menu-item {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  color: var(--ink);
+  text-align: left;
+  text-decoration: none;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+
+.retro-menu-item:hover,
+.retro-menu-item:focus {
+  background: var(--titlebar);
+  color: var(--titlebar-ink);
+  outline: none;
+}
+
+/* --- profile page and profile cards --- */
+
+.screen-wide .topbar,
+.screen-wide > .panel {
+  max-width: 880px;
+}
+
+.profile-layout {
+  width: 100%;
+  max-width: 880px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+
+.profile-layout .panel {
+  max-width: none;
+}
+
+.profile-preview {
+  position: sticky;
+  top: 16px;
+}
+
+@media (max-width: 760px) {
+  .profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .profile-preview {
+    position: static;
+    order: -1; /* the preview first on phones, so changes are visible */
+  }
+}
+
+.profile-form h2,
+.profile-preview h2,
+.settings-panel h2 {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  margin: 0 0 20px;
+}
+
+.form-group {
+  margin: 0 0 24px;
+  padding: 16px 16px 0;
+  border: 2px solid var(--ink-soft);
+}
+
+.form-group legend {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  text-transform: uppercase;
+  padding: 0 8px;
+}
+
+.field select,
+.field textarea {
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  padding: 10px 12px;
+  border: var(--border-w) solid var(--ink);
+  background: var(--bg);
+  color: var(--ink);
+  border-radius: 0;
+}
+
+.field textarea {
+  resize: vertical;
+}
+
+.field select:focus,
+.field textarea:focus {
+  outline: 3px solid var(--primary);
+  outline-offset: 0;
+}
+
+.field.has-error select,
+.field.has-error textarea {
+  border-color: var(--danger);
+}
+
+/* Checkboxes and radios drawn as pixel boxes: a filled square when checked,
+   square for radios too (no curves on the pixel grid). */
+.choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+
+.choice input {
+  appearance: none;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  border: 2px solid var(--ink);
+  background: var(--bg);
+  cursor: pointer;
+}
+
+.choice input:checked {
+  background: var(--primary);
+  box-shadow: inset 0 0 0 3px var(--bg);
+}
+
+.choice input:focus-visible {
+  outline: 2px dotted var(--ink);
+  outline-offset: 2px;
+}
+
+.choice:has(input:disabled),
+.choice input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* A checkbox inside a field reads as text, not as the field's label. */
+.field .choice {
+  font-family: var(--font-body);
+  font-size: 1.1rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.profile-preview .hint {
+  margin-top: 16px;
+}
+
+.social-row {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 4px 12px;
+}
+
+.social-row .choice {
+  margin: 0;
+}
+
+.social-row .field-error {
+  grid-column: 2 / -1;
+}
+
+.project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  gap: 8px;
+}
+
+.project-row .field-error {
+  grid-column: 1 / -1;
+}
+
+.project-row[hidden] {
+  display: none;
+}
+
+#add-project {
+  margin-bottom: 16px;
+}
+
+@media (max-width: 480px) {
+  .social-row,
+  .project-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.form-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.save-status {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  color: var(--good);
+  margin: 0;
+}
+
+.settings-panel {
+  margin-top: 24px;
+}
+
+.settings-panel h3 {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 24px 0 12px;
+}
+
+.account-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+  margin: 0 0 16px;
+  font-size: 1.1rem;
+}
+
+.account-facts dt {
+  color: var(--ink-soft);
+}
+
+.account-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+/* The card: on the profile page's preview and in chat's profile popups. */
+.profile-card {
+  background: var(--panel);
+  border: var(--border-w) solid var(--ink);
+  box-shadow: var(--shadow-off) var(--shadow-off) 0 var(--ink);
+  padding: 16px;
+  font-size: 1.1rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-header {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.profile-username {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  margin: 0 0 6px;
+}
+
+.profile-name,
+.profile-school,
+.profile-studies {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.profile-bio {
+  margin: 12px 0;
+  line-height: 1.25;
+}
+
+.status-chip {
+  display: inline-block;
+  margin: 0 0 8px;
+  padding: 2px 8px;
+  font-family: var(--font-display);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  color: var(--bg);
+  background: var(--ink-soft);
+}
+
+.status-studying { background: var(--primary); }
+.status-open_to_chat { background: var(--good); }
+.status-just_here { background: var(--accent); }
+
+.profile-section {
+  margin-top: 14px;
+}
+
+.profile-section h4 {
+  font-family: var(--font-display);
+  font-size: 0.5rem;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  margin: 0 0 8px;
+}
+
+.chip-list,
+.link-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.chip {
+  padding: 1px 8px;
+  border: 2px solid var(--ink-soft);
+}
+
+.link-list li + li {
+  margin-top: 4px;
+}
+
+.link-label {
+  color: var(--ink-soft);
+}
+
+.profile-card a {
+  color: var(--primary-dark);
+}
 
 /* --- video call (room page) --- */
 
@@ -573,10 +1005,23 @@ a {
   aspect-ratio: 16 / 9;
 }
 
-#video-layer .retro-body:not(:has(video))::before {
-  content: 'camera off';
+/* No picture (camera off, or muted): the person's avatar instead. */
+.camera-off {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
   font-family: var(--font-body);
   color: var(--ink-soft);
+}
+
+.retro-body:has(video:not([hidden])) .camera-off {
+  display: none;
+}
+
+/* In your own window the hint line already says so. */
+.retro-body:has(.window-notice:not(:empty)) .camera-off-caption {
+  display: none;
 }
 
 .retro-body video {
@@ -686,6 +1131,40 @@ a {
   flex: 1;
   min-height: 0;
   max-height: none;
+}
+
+/* Someone's profile, opened from chat: the card without its own frame. */
+.profile-window {
+  width: min(320px, calc(100vw - 16px));
+}
+
+.profile-window .retro-body {
+  display: block;
+  max-height: min(480px, calc(100vh - 80px));
+  overflow-y: auto;
+  padding: 0;
+  background: var(--panel);
+}
+
+.profile-window .profile-card {
+  border: 0;
+  box-shadow: none;
+}
+
+.profile-window .loading-line,
+.profile-window-error {
+  margin: 0;
+  padding: 16px;
+}
+
+.profile-window-error {
+  color: var(--danger);
+}
+
+.profile-edit-link {
+  display: inline-block;
+  margin: 0 16px 16px;
+  text-decoration: none;
 }
 
 /* Hidden windows (chat and video) wait here, Windows 95 taskbar style. */

@@ -1,3 +1,4 @@
+import json
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -128,11 +129,13 @@ def test_video_token_for_a_room(client, logged_in_room_user, livekit_configured)
     assert res.status_code == 200
     assert res.json()["url"] == "wss://test.livekit.cloud"
     claims = jwt.decode(res.json()["token"], TEST_LIVEKIT_SECRET, algorithms=["HS256"])
-    assert claims["name"] == "Room User"
+    assert claims["name"] == "roomuser"
     assert claims["video"]["room"] == f"room-{room['id']}"
     assert claims["video"]["roomJoin"] is True
     assert claims["video"]["canPublishSources"] == ["camera", "microphone"]
     assert claims["video"]["canPublishData"] is False
+    # Others in the call show this avatar while the camera is off (None: the pixel avatar).
+    assert json.loads(claims["metadata"]) == {"avatar_url": None}
     # The always_night fixture puts 6am a day away; the token stops there.
     assert claims["exp"] <= time.time() + 24 * 3600 + 5
 

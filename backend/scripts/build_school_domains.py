@@ -1,8 +1,9 @@
 """Regenerates app/data/school_domains.json: every website host in the NCES
 IPEDS institution directory (US schools, whatever their domain ends in --
 .edu, .org, .com, ...), mapped to the institution IDs (UNITIDs) that use it.
-No timezones are stored -- those come from the campus-time API at signup
-(see app/campus_time.py).
+It also writes app/data/school_names.json (UNITID -> institution name) for
+those schools, shown on student profiles. No timezones are stored -- those
+come from the campus-time API at signup (see app/campus_time.py).
 
 A student whose email domain matches a host here counts as being at a known
 school, so hosts that say nothing about who owns an address are left out:
@@ -34,6 +35,7 @@ HD_URL = "https://nces.ed.gov/ipeds/datacenter/data/HD2024.zip"
 HD_SHA256 = "d98425c123d7c0e872aec6e83960dfb501884818bf17385c340790f3d1f28345"
 HD_MEMBER = "HD2024.csv"
 OUTPUT_PATH = Path(__file__).parent.parent / "app" / "data" / "school_domains.json"
+NAMES_PATH = OUTPUT_PATH.with_name("school_names.json")
 
 HOSTNAME = re.compile(r"(?:[a-z0-9-]+\.)+[a-z]{2,}")
 # Free website builders some schools host their site on.
@@ -67,6 +69,7 @@ def main() -> None:
     with zipfile.ZipFile(io.BytesIO(archive)) as zf, zf.open(HD_MEMBER) as raw:
         rows = csv.DictReader(io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace"))
         ids_by_host: dict[str, set[str]] = defaultdict(set)
+        names: dict[str, str] = {}
         skipped: set[str] = set()
         for row in rows:
             host = website_host(row["WEBADDR"])
@@ -74,6 +77,7 @@ def main() -> None:
                 continue
             if usable(host):
                 ids_by_host[host].add(row["UNITID"])
+                names[row["UNITID"]] = row["INSTNM"].strip()
             else:
                 skipped.add(host)
 
@@ -81,6 +85,10 @@ def main() -> None:
     lines = [f"{json.dumps(host)}: {json.dumps(sorted(ids))}" for host, ids in sorted(ids_by_host.items())]
     OUTPUT_PATH.write_text("{\n" + ",\n".join(lines) + "\n}\n", encoding="utf-8")
     print(f"wrote {len(lines)} domains to {OUTPUT_PATH} (skipped {len(skipped)}: {', '.join(sorted(skipped))})")
+
+    name_lines = [f"{json.dumps(unitid)}: {json.dumps(name)}" for unitid, name in sorted(names.items())]
+    NAMES_PATH.write_text("{\n" + ",\n".join(name_lines) + "\n}\n", encoding="utf-8")
+    print(f"wrote {len(name_lines)} school names to {NAMES_PATH}")
 
 
 if __name__ == "__main__":

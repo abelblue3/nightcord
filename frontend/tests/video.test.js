@@ -10,6 +10,8 @@ const lk = vi.hoisted(() => {
     TrackUnsubscribed: 'trackUnsubscribed',
     LocalTrackPublished: 'localTrackPublished',
     LocalTrackUnpublished: 'localTrackUnpublished',
+    TrackMuted: 'trackMuted',
+    TrackUnmuted: 'trackUnmuted',
     Disconnected: 'disconnected',
   };
   const state = { room: null, cameraError: null };
@@ -154,6 +156,32 @@ describe('the room video call', () => {
 
     room.emit('participantDisconnected', sam);
     expect(windowOf('Sam')).toBeUndefined();
+  });
+
+  it('with the camera off, a window shows the avatar from their join token', async () => {
+    const room = await join();
+    const photo = 'https://img.clerk.com/sam.png';
+    room.emit('participantConnected', { identity: '2', name: 'Sam', metadata: JSON.stringify({ avatar_url: photo }) });
+    room.emit('participantConnected', { identity: '3', name: 'Kai', metadata: '' });
+
+    expect(windowOf('Sam').querySelector('.camera-off img').src).toBe(photo);
+    expect(windowOf('Kai').querySelector('.camera-off .avatar-pixel')).not.toBeNull();
+    expect(windowOf('You').querySelector('.camera-off')).not.toBeNull();
+  });
+
+  it('a camera switched off hides its last frame, and shows again when switched on', async () => {
+    const room = await join();
+    const sam = { identity: '2', name: 'Sam' };
+    const video = fakeTrack('video');
+    const publication = { kind: 'video', track: { attachedElements: [video.element] } };
+    room.emit('participantConnected', sam);
+    room.emit('trackSubscribed', video, publication, sam);
+
+    room.emit('trackMuted', publication, sam);
+    expect(video.element.hidden).toBe(true);
+
+    room.emit('trackUnmuted', publication, sam);
+    expect(video.element.hidden).toBe(false);
   });
 
   it("hiding someone else's window puts it on the taskbar, and the taskbar brings it back", async () => {

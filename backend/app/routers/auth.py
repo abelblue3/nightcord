@@ -7,12 +7,13 @@ from sqlalchemy.orm import Session
 
 from app import clerk_auth
 from app.auth import bearer_scheme, email_domain, get_current_user, is_allowed_student_email, verified_claims
-from app.campus_time import SchoolLookup, find_school_ids, lookup_school
+from app.campus_time import SchoolLookup, find_school_ids, lookup_school, school_name
 from app.database import get_db
 from app.gate import resolve_signup_timezone
 from app.models import User
 from app.rate_limit import limiter
 from app.schemas import EmailCheck, EmailCheckOut, MessageResponse, SessionStart, UserOut
+from app.usernames import available_username
 
 # uvicorn's logger, like clerk_auth's, so failures show up formatted alongside
 # the server's own lines.
@@ -20,7 +21,6 @@ logger = logging.getLogger("uvicorn.error")
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
-DISPLAY_NAME_MAX_LENGTH = User.__table__.c.display_name.type.length
 NOT_A_STUDENT_MESSAGE = "nightcord is for college students — please sign up with your school email address."
 
 
@@ -76,11 +76,14 @@ def start_session(
         user = db.query(User).filter(func.lower(User.email) == email.lower()).first()
 
     if user is None:
-        name = clerk_user.full_name or email.split("@")[0]
+        # The username starts from the email's first part, not the real name,
+        # so students are anonymous unless they choose otherwise. Clerk's name
+        # is kept privately (show_name is off) to prefill their profile.
         user = User(
             email=email,
             clerk_user_id=clerk_user_id,
-            display_name=name[:DISPLAY_NAME_MAX_LENGTH],
+            display_name=available_username(db, email.split("@")[0]),
+            name=clerk_user.full_name or None,
             timezone=resolve_signup_timezone(school, payload.timezone),
         )
         db.add(user)
@@ -88,6 +91,14 @@ def start_session(
         user.clerk_user_id = clerk_user_id
         if user.timezone is None:
             user.timezone = resolve_signup_timezone(school, payload.timezone)
+    if user.school_name is None:
+        user.school_name = school_name(email_domain(email))
+    # Their Google/Microsoft photo, if Clerk has a real one. A student who
+    # opted into it follows it when it changes (or loses it when it's gone).
+    photo = clerk_user.image_url if clerk_user.has_image else None
+    if user.avatar_url and user.avatar_url == user.provider_photo_url:
+        user.avatar_url = photo
+    user.provider_photo_url = photo
 
     db.commit()
     db.refresh(user)

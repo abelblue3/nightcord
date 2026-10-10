@@ -58,8 +58,9 @@ def test_websocket_send_and_receive_broadcast(client, logged_in_user, room_socke
 
     assert received["content"] == "hey, anyone up for calc?"
     assert received["room_id"] == room_id
-    assert received["display_name"] == "Chat User"
+    assert received["display_name"] == "chatuser"
     assert "id" in received and "created_at" in received
+    assert received["avatar_url"] is None  # the pixel avatar
 
 
 def test_websocket_ignores_blank_messages(client, logged_in_user, room_socket):
@@ -184,7 +185,7 @@ def test_history_includes_author_display_name(client, logged_in_user, room_socke
         ws.receive_json()
 
     history = client.get(f"/rooms/{room_id}/messages").json()
-    assert history[-1]["display_name"] == "Chat User"
+    assert history[-1]["display_name"] == "chatuser"
 
 
 # --- open sockets are re-checked ---

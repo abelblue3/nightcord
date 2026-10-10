@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>nightcord — profile</title>
+    <script src="/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="screen screen-wide">
+      <div class="topbar">
+        <a href="/rooms.html" class="btn btn-small" style="text-decoration: none;">&lt; Rooms</a>
+        <span class="logo">PROFILE</span>
+        <div class="topbar-actions">
+          <button class="btn theme-toggle" id="theme-toggle" type="button"></button>
+          <div id="avatar-menu"></div>
+        </div>
+      </div>
+
+      <div class="error-box" id="error-box"></div>
+
+      <div class="profile-layout">
+        <form class="panel profile-form" id="profile-form" novalidate>
+          <h2>Your profile</h2>
+
+          <fieldset class="form-group">
+            <legend>Picture</legend>
+            <label class="choice"><input type="radio" name="avatar" value="pixel" /> Pixel avatar</label>
+            <label class="choice"><input type="radio" name="avatar" value="photo" id="avatar-photo" /> My Google/Microsoft photo</label>
+            <p class="hint" id="photo-hint" hidden>Sign in with Google or Microsoft to use their photo.</p>
+          </fieldset>
+
+          <fieldset class="form-group">
+            <legend>About you</legend>
+            <div class="field">
+              <label for="display_name">Username</label>
+              <input id="display_name" name="display_name" required minlength="3" maxlength="20" autocomplete="username" />
+              <p class="hint">3–20 lowercase letters, numbers or _. Everyone sees this.</p>
+            </div>
+            <div class="field">
+              <label for="name">Name (optional)</label>
+              <input id="name" name="name" maxlength="100" autocomplete="name" />
+              <label class="choice"><input type="checkbox" name="show_name" id="show_name" /> Show my name on my profile</label>
+            </div>
+            <div class="field">
+              <label for="pronouns">Pronouns (optional)</label>
+              <input id="pronouns" name="pronouns" maxlength="20" />
+            </div>
+            <div class="field">
+              <label for="bio">Bio</label>
+              <textarea id="bio" name="bio" maxlength="160" rows="3"></textarea>
+            </div>
+            <div class="field">
+              <label for="status">Status</label>
+              <select id="status" name="status">
+                <option value="">—</option>
+                <option value="studying">Studying</option>
+                <option value="open_to_chat">Open to chat</option>
+                <option value="just_here">Just here</option>
+              </select>
+            </div>
+          </fieldset>
+
+          <fieldset class="form-group">
+            <legend>School</legend>
+            <div class="field">
+              <label for="major">Major</label>
+              <input id="major" name="major" maxlength="60" />
+            </div>
+            <div class="field">
+              <label for="year">Year</label>
+              <select id="year" name="year">
+                <option value="">—</option>
+                <option>Freshman</option>
+                <option>Sophomore</option>
+                <option>Junior</option>
+                <option>Senior</option>
+                <option>Grad</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="interests">Interests</label>
+              <input id="interests" name="interests" placeholder="chess, lofi, robotics" />
+              <p class="hint">Separate with commas, up to 10.</p>
+            </div>
+            <div class="field">
+              <label for="courses">Courses this term</label>
+              <input id="courses" name="courses" placeholder="CS 161, MATH 51" />
+            </div>
+          </fieldset>
+
+          <fieldset class="form-group" id="socials">
+            <legend>Socials (optional)</legend>
+            <p class="hint">Just the handle. Untick "Show" to keep one to yourself.</p>
+            <div id="social-rows"></div>
+          </fieldset>
+
+          <fieldset class="form-group" id="projects">
+            <legend>Projects &amp; publications (optional)</legend>
+            <div id="project-rows"></div>
+            <button type="button" class="btn btn-small" id="add-project">Add another</button>
+          </fieldset>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary" id="save-profile">Save profile</button>
+            <p class="save-status" id="save-status" role="status" aria-live="polite"></p>
+          </div>
+        </form>
+
+        <aside class="profile-preview" aria-label="Preview">
+          <h2>Preview</h2>
+          <div id="profile-preview"></div>
+          <p class="hint">How other students see you.</p>
+        </aside>
+      </div>
+
+      <section class="panel settings-panel" id="settings" aria-labelledby="settings-title">
+        <h2 id="settings-title">Settings</h2>
+
+        <h3>Appearance</h3>
+        <label class="choice"><input type="checkbox" id="lamp-setting" /> Lamp: warmer colors</label>
+
+        <h3>Account</h3>
+        <dl class="account-facts">
+          <dt>Email</dt>
+          <dd id="account-email"></dd>
+          <dt>University</dt>
+          <dd id="account-school"></dd>
+          <dt>Timezone</dt>
+          <dd id="account-timezone"></dd>
+        </dl>
+        <p class="hint">
+          Your university and timezone come from your school email, and the timezone decides when rooms open,
+          so they can't be changed here. To change your password, use "Forgot password?" on the sign-in page.
+        </p>
+      </section>
+
+      <footer class="site-footer">
+        <a href="/terms.html">Terms</a>
+        <span aria-hidden="true">·</span>
+        <a href="/privacy.html">Privacy</a>
+        <span aria-hidden="true">·</span>
+        <a href="#" data-cookie-settings>Cookie settings</a>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/profile.js"></script>
+  </body>
+</html>

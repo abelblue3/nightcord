@@ -1,4 +1,5 @@
 import { getVideoToken } from './api.js';
+import { renderAvatar } from './avatar.js';
 import { createWindow } from './floatingWindow.js';
 import { setBusy } from './ui.js';
 
@@ -34,6 +35,24 @@ const PIXEL_ICON = {
 // A one-pixel diagonal from corner to corner.
 const SLASH = Array.from({ length: 12 }, (_, i) => `<rect x="${i}" y="${i}" width="1" height="1"/>`).join('');
 
+// What a window shows while there's no picture: the person's avatar (from
+// their join token's metadata) over "camera off".
+function cameraOffCard(participant) {
+  let avatarUrl = null;
+  try {
+    avatarUrl = JSON.parse(participant.metadata || '{}').avatar_url ?? null;
+  } catch {
+    // no metadata: the pixel avatar
+  }
+  const card = document.createElement('div');
+  card.className = 'camera-off';
+  const caption = document.createElement('span');
+  caption.className = 'camera-off-caption';
+  caption.textContent = 'camera off';
+  card.append(renderAvatar({ avatarUrl, userId: Number(participant.identity), size: 48 }), caption);
+  return card;
+}
+
 function deviceButton(device) {
   const button = document.createElement('button');
   button.type = 'button';
@@ -47,7 +66,7 @@ function deviceButton(device) {
   return button;
 }
 
-export function initVideo(roomId, { joinButton, layer, taskbar, onError }) {
+export function initVideo(roomId, { joinButton, layer, taskbar, onError, onCallChange = () => {} }) {
   let room = null;
   // participant identity -> their window, plus its taskbar button while hidden
   const windows = new Map();
@@ -119,6 +138,7 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError }) {
             resize: 'aspect',
             onHide: () => hideToTaskbar(entry),
           });
+      entry.win.body.append(cameraOffCard(participant));
       layer.appendChild(entry.win.element);
       windows.set(participant.identity, entry);
     }
@@ -143,12 +163,20 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError }) {
       const fit = () => win.setAspectRatio(element.videoWidth, element.videoHeight);
       element.addEventListener('loadedmetadata', fit);
       element.addEventListener('resize', fit);
+      element.hidden = Boolean(track.isMuted);
     }
     win.body.prepend(element);
   }
 
   function detach(track) {
     for (const element of track.detach()) element.remove();
+  }
+
+  // A camera switched off is muted, not removed: hide its last frame so the
+  // avatar shows instead.
+  function showPicture(publication, shown) {
+    if (publication.kind !== 'video') return;
+    for (const element of publication.track?.attachedElements ?? []) element.hidden = !shown;
   }
 
   function reset() {
@@ -158,6 +186,7 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError }) {
     layer.replaceChildren();
     taskbar.replaceChildren();
     joinButton.hidden = false;
+    onCallChange(false);
   }
 
   function deviceSwitch(button, device, setEnabled, afterChange) {
@@ -197,11 +226,14 @@ export function initVideo(roomId, { joinButton, layer, taskbar, onError }) {
           if (publication.track.kind === 'video') attach(publication.track, participant, true);
         })
         .on(RoomEvent.LocalTrackUnpublished, (publication) => detach(publication.track))
+        .on(RoomEvent.TrackMuted, (publication) => showPicture(publication, false))
+        .on(RoomEvent.TrackUnmuted, (publication) => showPicture(publication, true))
         .on(RoomEvent.Disconnected, reset);
       await room.connect(url, token);
       windowFor(room.localParticipant, true);
       for (const participant of room.remoteParticipants.values()) windowFor(participant);
       joinButton.hidden = true;
+      onCallChange(true);
     } catch (err) {
       room = null;
       onError(err);

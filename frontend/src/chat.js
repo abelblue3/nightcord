@@ -4,7 +4,10 @@ import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket } fro
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { initThemeToggle } from './theme.js';
+import { initAvatarMenu } from './avatarMenu.js';
+import { renderMessage } from './chatMessage.js';
 import { createWindow } from './floatingWindow.js';
+import { openProfilePopup } from './profilePopup.js';
 import { loadingLine, setBusy } from './ui.js';
 import { initVideo } from './video.js';
 
@@ -79,7 +82,7 @@ async function init() {
   const taskbar = document.getElementById('taskbar');
   const chatWindow = openChatWindow(roomName.toUpperCase(), taskbar);
 
-  document.getElementById('logout-btn').addEventListener('click', signOut);
+  const avatarMenu = initAvatarMenu(document.getElementById('avatar-menu'));
 
   const chatLog = document.getElementById('chat-log');
   const errorBox = document.getElementById('error-box');
@@ -96,36 +99,10 @@ async function init() {
     statusEl.className = `connection-status ${cls}`;
   }
 
-  function formatTime(iso) {
-    const d = new Date(iso);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function renderMessage({ display_name, content, created_at, user_id }) {
-    const wrap = document.createElement('div');
-    wrap.className = 'msg' + (currentUser && user_id === currentUser.id ? ' own' : '');
-
-    const meta = document.createElement('div');
-    meta.className = 'msg-meta';
-    const nameSpan = document.createElement('span');
-    nameSpan.textContent = display_name || 'someone';
-    const timeSpan = document.createElement('span');
-    timeSpan.className = 'msg-time';
-    timeSpan.textContent = formatTime(created_at);
-    meta.appendChild(nameSpan);
-    meta.appendChild(timeSpan);
-
-    const body = document.createElement('div');
-    body.className = 'msg-body';
-    body.textContent = content;
-
-    wrap.appendChild(meta);
-    wrap.appendChild(body);
-    return wrap;
-  }
+  const showMessage = (msg) => renderMessage(msg, { currentUser, onOpenProfile: openProfilePopup });
 
   function appendMessage(msg) {
-    chatLog.appendChild(renderMessage(msg));
+    chatLog.appendChild(showMessage(msg));
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
@@ -171,7 +148,7 @@ async function init() {
       // Insert above what's shown without moving what the reader is looking at.
       const heightBefore = chatLog.scrollHeight;
       const fragment = document.createDocumentFragment();
-      for (const msg of older) fragment.appendChild(renderMessage(msg));
+      for (const msg of older) fragment.appendChild(showMessage(msg));
       loadEarlierBtn.after(fragment);
       chatLog.scrollTop += chatLog.scrollHeight - heightBefore;
       showOrHideLoadEarlier(older);
@@ -187,6 +164,7 @@ async function init() {
     layer: document.getElementById('video-layer'),
     taskbar,
     onError: handleHistoryError, // the same closed-screen / error-box handling
+    onCallChange: (inCall) => avatarMenu.setInCall(inCall),
   });
 
   let socket;

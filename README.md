@@ -90,7 +90,9 @@ The API will be available at `http://localhost:8000` (docs at `/docs`).
 `ENVIRONMENT` defaults to `production` when unset, so a deploy that forgets it
 still gets HSTS, no dev gate bypass, and no public `/docs`.
 `.env.example` sets `development` for local work — keep that locally, and set
-`ENVIRONMENT=production` explicitly on Railway.
+`ENVIRONMENT=production` explicitly on Railway production. Railway beta sets
+`ENVIRONMENT=beta`, which keeps the night gate open around the clock so beta
+can be tested in the daytime.
 
 ### Database migrations
 
@@ -175,6 +177,14 @@ no session cookie, and ordinary requests never call Clerk.
   device. Kept for a future account-settings page; the site doesn't link to it
   yet. The pages' **Log out** button signs out only that browser (in Clerk, on
   the frontend) and clears what nightcord saved there
+- `GET /me/profile` / `PATCH /me/profile` — your profile: username (3–20
+  lowercase letters, digits, `_`; unique), optional name (hidden unless
+  `show_name`), pronouns, bio, status, major/year, interests and courses,
+  socials (each shown or hidden), projects, and `use_photo` to swap the pixel
+  avatar for your Google/Microsoft photo. School and timezone are read-only.
+  Sign-in only — works outside night hours too
+- `GET /users/{id}/profile` — another student's public profile: no email,
+  the name only if they show it, and only their visible socials (auth)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
 - `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);
