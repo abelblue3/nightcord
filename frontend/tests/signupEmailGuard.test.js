@@ -15,6 +15,17 @@ function buildSignupForm() {
   const input = container.querySelector('input');
   const clerkSubmit = vi.fn((event) => event.preventDefault());
   form.addEventListener('submit', clerkSubmit);
+  // Like a real browser (jsdom doesn't model this): requestSubmit() is
+  // ignored while the form is still busy with a submit, which lasts until
+  // the task that fired it ends -- including promises that settle inside it.
+  let busy = false;
+  const requestSubmit = form.requestSubmit.bind(form);
+  form.requestSubmit = () => {
+    if (busy) return;
+    busy = true;
+    setTimeout(() => (busy = false));
+    requestSubmit();
+  };
   return { container, form, input, clerkSubmit };
 }
 
@@ -23,7 +34,7 @@ function typeInto(input, value) {
   input.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+const flush = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 const REJECTED = { allowed: false, message: 'nightcord is for college students — please sign up with your school email address.' };
 const ALLOWED = { allowed: true, message: null };
@@ -73,6 +84,17 @@ describe('guardSignupEmail', () => {
 
     expect(page.clerkSubmit).toHaveBeenCalledTimes(1);
     expect(clearError).toHaveBeenCalled();
+  });
+
+  it('passes an address already checked while typing through to Clerk', async () => {
+    typeInto(page.input, 'student@harvard.edu');
+    page.input.dispatchEvent(new Event('focusout', { bubbles: true }));
+    await flush(); // the check finishes before Continue is clicked
+
+    page.form.requestSubmit();
+    await flush();
+
+    expect(page.clerkSubmit).toHaveBeenCalledTimes(1);
   });
 
   it('clears the warning once the address is fixed', async () => {
