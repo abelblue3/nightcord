@@ -62,12 +62,17 @@ export function guardSignupEmail(container, { checkEmail, showError, clearError 
       event.stopImmediatePropagation();
 
       if (await check(currentEmail())) {
-        resubmitting = true;
-        try {
-          form.requestSubmit();
-        } finally {
-          resubmitting = false;
-        }
+        // The browser ignores requestSubmit() until it has finished with this
+        // submit, and a verdict already fetched while typing arrives before
+        // then -- so resubmit from the next task.
+        setTimeout(() => {
+          resubmitting = true;
+          try {
+            form.requestSubmit();
+          } finally {
+            resubmitting = false;
+          }
+        });
       }
     },
     true,
