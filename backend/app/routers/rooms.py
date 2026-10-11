@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from livekit import api as livekit
@@ -17,6 +17,10 @@ router = APIRouter(prefix="/rooms", tags=["rooms"])
 
 MESSAGE_PAGE_SIZE = 50
 MAX_MESSAGE_PAGE_SIZE = 100
+# LiveKit checks the join token only when connecting and refreshes it for
+# people already in the call, so it can be short: a stolen one stops working
+# soon after "log out everywhere".
+VIDEO_TOKEN_TTL = timedelta(minutes=10)
 
 
 @router.get("", response_model=list[RoomOut])
@@ -49,12 +53,15 @@ def get_room_messages(
     request: Request,
     room_id: int,
     before: int | None = Query(default=None, ge=1, description="Only messages older than this message id."),
+    after: int | None = Query(default=None, ge=1, description="Only messages newer than this message id."),
     limit: int = Query(default=MESSAGE_PAGE_SIZE, ge=1, le=MAX_MESSAGE_PAGE_SIZE),
     db: Session = Depends(get_db),
     _: User = Depends(require_night_access),
 ) -> list[Message]:
     """One page of history, oldest first: the newest `limit` messages, or
-    the `limit` messages just before `before` when paging back further.
+    the `limit` messages just before `before` when paging back further, or
+    the `limit` messages just after `after` when catching up after a
+    reconnect.
     """
     room = db.get(Room, room_id)
     if not room:
@@ -67,6 +74,8 @@ def get_room_messages(
     )
     if before is not None:
         query = query.filter(Message.id < before)
+    if after is not None:
+        return query.filter(Message.id > after).order_by(Message.id).limit(limit).all()
 
     newest_first = query.order_by(Message.id.desc()).limit(limit).all()
     return list(reversed(newest_first))
@@ -89,9 +98,10 @@ def get_video_token(
     if not db.get(Room, room_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Room not found.")
 
-    # Valid until 6am at the student's school, so nobody can join after the
-    # night ends.
+    # Never valid past 6am at the student's school, so nobody can join after
+    # the night ends.
     night_ends = gate.night_ends_at(current_user.timezone or gate.FALLBACK_TIMEZONE)
+    now = datetime.now(timezone.utc)
     token = (
         livekit.AccessToken(settings.livekit_api_key, settings.livekit_api_secret)
         .with_identity(str(current_user.id))
@@ -99,7 +109,7 @@ def get_video_token(
         # Lets the other windows in the call show this student's avatar while
         # their camera is off.
         .with_metadata(json.dumps({"avatar_url": current_user.avatar_url}))
-        .with_ttl(night_ends - datetime.now(timezone.utc))
+        .with_ttl(min(VIDEO_TOKEN_TTL, night_ends - now))
         .with_grants(
             livekit.VideoGrants(
                 room_join=True,

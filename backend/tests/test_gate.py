@@ -103,6 +103,17 @@ def test_resolve_signup_timezone_ignores_an_invalid_school_timezone():
     assert resolve_signup_timezone(school, "America/Denver") == "America/Denver"
 
 
+@pytest.mark.parametrize("client_tz", ["Pacific/Honolulu", "America/Puerto_Rico", "America/Indiana/Indianapolis"])
+def test_resolve_signup_timezone_accepts_any_us_client_zone(client_tz):
+    assert resolve_signup_timezone(NOT_FOUND, client_tz) == client_tz
+
+
+def test_resolve_signup_timezone_ignores_a_non_us_client_zone():
+    # Every school in the list is in the US; a far-off zone would move the
+    # night gate to US daytime.
+    assert resolve_signup_timezone(NOT_FOUND, "Asia/Tokyo") == FALLBACK_TIMEZONE
+
+
 def test_resolve_signup_timezone_falls_back_to_utc_when_nothing_valid():
     assert resolve_signup_timezone(NOT_FOUND, None) == FALLBACK_TIMEZONE
     assert resolve_signup_timezone(NOT_FOUND, "not-a-real-zone") == FALLBACK_TIMEZONE

@@ -17,10 +17,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
-    # Set the first time this person signs in through Clerk. The database still
-    # holds the pre-Clerk columns (hashed_password, google_id,
-    # failed_login_attempts, lockout_until, token_version) so a rollback stays
-    # possible; nothing reads them, and a later migration drops them.
+    # Set the first time this person signs in through Clerk.
     clerk_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     # The username everyone sees (app/usernames.py has the rules).
     display_name: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)

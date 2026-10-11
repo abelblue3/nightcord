@@ -57,12 +57,11 @@ class SendLimiter:
 
 
 def origin_allowed(websocket: WebSocket) -> bool:
-    """CORS doesn't apply to WebSockets, and with a SameSite=None session
-    cookie any other website could otherwise open a chat socket as whoever
-    is logged in. Browsers always send Origin on a WebSocket handshake, so
-    it's checked against the same allowlist CORS uses. A missing Origin means
-    a non-browser client (e.g. the canary), which has no victim's cookie to
-    ride, so it's let through to the normal cookie check.
+    """CORS doesn't apply to WebSockets, so any other website could open a
+    chat socket here. Browsers always send Origin on a WebSocket handshake,
+    so it's checked against the same allowlist CORS uses. A missing Origin
+    means a non-browser client (e.g. the canary), which is let through: like
+    every socket, it still has to send a valid token in its first frame.
     """
     origin = websocket.headers.get("origin")
     return origin is None or origin in settings.cors_origin_list

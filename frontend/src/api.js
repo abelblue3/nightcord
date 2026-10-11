@@ -146,10 +146,14 @@ export async function createRoom(name) {
   return request('/rooms', { method: 'POST', body: { name }, auth: true });
 }
 
-// Newest page first; pass `before` (a message id) to page further back.
-export async function getRoomMessages(roomId, { before } = {}) {
-  const query = before ? `?before=${encodeURIComponent(before)}` : '';
-  return request(`/rooms/${roomId}/messages${query}`, { auth: true });
+// Newest page first; pass `before` (a message id) to page further back, or
+// `after` to get what arrived after it (catching up after a reconnect).
+export async function getRoomMessages(roomId, { before, after } = {}) {
+  const params = new URLSearchParams();
+  if (before) params.set('before', before);
+  if (after) params.set('after', after);
+  const query = params.toString();
+  return request(`/rooms/${encodeURIComponent(roomId)}/messages${query ? `?${query}` : ''}`, { auth: true });
 }
 
 // Profiles need sign-in only (not the night gate), so they work in the daytime.
@@ -164,12 +168,12 @@ export async function updateMyProfile(changes) {
 }
 
 export async function getProfile(userId) {
-  return request(`/users/${userId}/profile`, { auth: true });
+  return request(`/users/${encodeURIComponent(userId)}/profile`, { auth: true });
 }
 
 // A LiveKit token for the room's video call (see video.js).
 export async function getVideoToken(roomId) {
-  return request(`/rooms/${roomId}/video-token`, { method: 'POST', auth: true });
+  return request(`/rooms/${encodeURIComponent(roomId)}/video-token`, { method: 'POST', auth: true });
 }
 
 // Clerk session tokens last about a minute, and the server closes a chat
@@ -188,7 +192,7 @@ export async function connectRoomSocket(roomId) {
   if (devSkipGateActive()) params.set('skip_gate', '1');
   const query = params.toString();
 
-  const socket = new WebSocket(`${wsBaseUrl()}/ws/rooms/${roomId}${query ? `?${query}` : ''}`);
+  const socket = new WebSocket(`${wsBaseUrl()}/ws/rooms/${encodeURIComponent(roomId)}${query ? `?${query}` : ''}`);
   let reauthTimer;
   socket.addEventListener('open', () => {
     socket.send(JSON.stringify({ type: 'auth', token }));

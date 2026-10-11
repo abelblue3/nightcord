@@ -6,7 +6,9 @@ services:
       POSTGRES_PASSWORD: nightcord
       POSTGRES_DB: nightcord
     ports:
-      - "5432:5432"
+      # This machine only: a bare "5432:5432" would also open the database
+      # (and its dev-only password) to everyone on the same Wi-Fi.
+      - "127.0.0.1:5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
 
