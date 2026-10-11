@@ -11,4 +11,15 @@ class RequestLogTest < Minitest::Test
     assert_match %r{\APOST /api/ws/rooms/1 201 \d+ms\n\z}, line
     refute_includes line, "super-secret"
   end
+
+  def test_a_path_cannot_forge_log_lines_or_send_terminal_escapes
+    output = StringIO.new
+    app = NightcordWeb::RequestLog.new(->(_env) { [404, {}, []] }, output: output)
+    env = Rack::MockRequest.env_for("/x")
+    env["PATH_INFO"] = "/x\nGET /api/auth/session 200 3ms\e[2J"
+
+    app.call(env)
+
+    assert_equal "GET /x%0AGET /api/auth/session 200 3ms%1B[2J 404", output.string.sub(/ \d+ms\n\z/, "")
+  end
 end

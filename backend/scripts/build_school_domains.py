@@ -7,8 +7,9 @@ come from the campus-time API at signup (see app/campus_time.py).
 
 A student whose email domain matches a host here counts as being at a known
 school, so hosts that say nothing about who owns an address are left out:
-free hosting platforms, K-12 school districts (whose addresses include high
-schoolers and district staff), and entries that aren't hostnames at all.
+free hosting platforms, K-12 school districts and BOCES (whose addresses
+include high schoolers and district staff), government and hospital-system
+domains, and entries that aren't hostnames at all.
 
 Temporary: this exists only because campus-time can't yet search by email
 domain. Once it can, delete this script and the JSON it writes.
@@ -43,6 +44,12 @@ HOSTING_PLATFORMS = (
     "jimdo.com", "jimdosite.com", "wixsite.com", "wordpress.com", "blogspot.com", "weebly.com",
     "squarespace.com", "godaddysites.com", "sites.google.com", "business.site",
 )
+# Hosts whose addresses belong mostly to people who aren't college students:
+# government, K-12 districts and BOCES, and hospital systems that run a
+# nursing school on their own domain.
+NON_STUDENT_HOST = re.compile(
+    r"\.(gov|mil)$|k12|boces|(^|\.)[a-z]*[iu]sd\.|countyschools|(health|healthcare|hospital|clinic)\.[a-z]+$"
+)
 
 
 def website_host(web_address: str) -> str:
@@ -57,7 +64,9 @@ def usable(host: str) -> bool:
         return False  # e.g. an email address or "https" typed into the website field
     if any(host == platform or host.endswith(f".{platform}") for platform in HOSTING_PLATFORMS):
         return False
-    return ".k12." not in f".{host}."
+    # Only accredited postsecondary schools can register .edu (usd.edu is the
+    # University of South Dakota), so the name patterns apply elsewhere.
+    return host.endswith(".edu") or not NON_STUDENT_HOST.search(host)
 
 
 def main() -> None:

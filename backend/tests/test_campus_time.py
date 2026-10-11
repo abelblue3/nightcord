@@ -29,6 +29,29 @@ def test_find_school_ids(domain, expected):
     assert find_school_ids(domain) == expected
 
 
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "michigan.gov",  # state government
+        "dli.pa.gov",
+        "dept.michigan.gov",
+        "clevelandclinic.org",  # hospital systems
+        "sanfordhealth.org",
+        "rocklandboces.org",  # K-12 / district services
+        "hasdk12.org",
+        "mdae.mdusd.org",
+        "sarasotacountyschools.net",
+    ],
+)
+def test_non_student_domains_are_not_schools(domain):
+    assert find_school_ids(domain) == []
+
+
+@pytest.mark.parametrize("domain", ["empirebeautyschools.com", "alliedhealthedu.com", "jefftech.us", "usd.edu", "risd.edu"])
+def test_postsecondary_schools_off_edu_still_count(domain):
+    assert find_school_ids(domain) != []
+
+
 # --- school -> timezone (campus-time API) ---
 
 

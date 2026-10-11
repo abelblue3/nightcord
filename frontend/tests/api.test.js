@@ -335,6 +335,12 @@ describe('getRoomMessages', () => {
     await getRoomMessages(7, { before: 123 });
     expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?before=123$/);
   });
+
+  it('catches up with ?after=<newest message id>', async () => {
+    mockFetchOnce(200, []);
+    await getRoomMessages(7, { after: 456 });
+    expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?after=456$/);
+  });
 });
 
 describe('getVideoToken', () => {
@@ -348,6 +354,12 @@ describe('getVideoToken', () => {
     expect(options.method).toBe('POST');
     expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
     expect(result).toEqual({ url: 'wss://x.livekit.cloud', token: 't' });
+  });
+
+  it("keeps a crafted room id inside the room's path", async () => {
+    mockFetchOnce(200, {});
+    await getVideoToken('../auth/logout-all?');
+    expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/\.\.%2Fauth%2Flogout-all%3F\/video-token$/);
   });
 });
 

@@ -99,6 +99,20 @@ def test_history_pages_backwards_with_before(client, db_session, logged_in_room_
     assert contents == [f"msg {n}" for n in range(120)]
 
 
+def test_history_catches_up_with_after(client, db_session, logged_in_room_user):
+    room = client.post("/rooms", json={"name": "catch-up-room"}).json()
+    _seed_messages(db_session, room["id"], 10)
+    seen = client.get(f"/rooms/{room['id']}/messages", params={"limit": 4}).json()
+    _seed_messages(db_session, room["id"], 3)  # sent while the socket was down
+
+    newer = client.get(f"/rooms/{room['id']}/messages", params={"after": seen[0]["id"], "limit": 5}).json()
+    assert [m["content"] for m in newer] == ["msg 7", "msg 8", "msg 9", "msg 0", "msg 1"]
+
+    newest = client.get(f"/rooms/{room['id']}/messages", params={"after": newer[-1]["id"]}).json()
+    assert [m["content"] for m in newest] == ["msg 2"]
+    assert client.get(f"/rooms/{room['id']}/messages", params={"after": newest[-1]["id"]}).json() == []
+
+
 def test_history_page_size_is_capped(client, logged_in_room_user):
     room = client.post("/rooms", json={"name": "cap-room"}).json()
     assert client.get(f"/rooms/{room['id']}/messages", params={"limit": 100}).status_code == 200
@@ -136,13 +150,14 @@ def test_video_token_for_a_room(client, logged_in_room_user, livekit_configured)
     assert claims["video"]["canPublishData"] is False
     # Others in the call show this avatar while the camera is off (None: the pixel avatar).
     assert json.loads(claims["metadata"]) == {"avatar_url": None}
-    # The always_night fixture puts 6am a day away; the token stops there.
-    assert claims["exp"] <= time.time() + 24 * 3600 + 5
+    # 6am is a day away (always_night fixture), but the token is short-lived,
+    # so a stolen one stops working soon after "log out everywhere".
+    assert claims["exp"] <= time.time() + 10 * 60 + 5
 
 
 def test_video_token_stops_at_6am(client, logged_in_room_user, livekit_configured, monkeypatch):
     room = client.post("/rooms", json={"name": "video-morning"}).json()
-    six_am = datetime.now(timezone.utc) + timedelta(minutes=10)
+    six_am = datetime.now(timezone.utc) + timedelta(minutes=3)
     monkeypatch.setattr("app.gate.night_ends_at", lambda tz_name, now=None: six_am)
 
     token = client.post(f"/rooms/{room['id']}/video-token").json()["token"]

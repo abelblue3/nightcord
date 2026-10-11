@@ -14,7 +14,9 @@ module NightcordWeb
       [status, headers, body]
     ensure
       elapsed_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round
-      path = "#{env["SCRIPT_NAME"]}#{env["PATH_INFO"]}"
+      # Bytes outside printable ASCII are written as %XX, so a path can't
+      # start a fake log line or send escape codes to a terminal reading it.
+      path = "#{env["SCRIPT_NAME"]}#{env["PATH_INFO"]}".b.gsub(/[^\x20-\x7e]/n) { |c| format("%%%02X", c.ord) }
       @output.puts("#{env["REQUEST_METHOD"]} #{path} #{status || 500} #{elapsed_ms}ms")
     end
   end

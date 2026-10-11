@@ -9,6 +9,7 @@ section for the full reasoning.
 """
 import secrets
 from datetime import datetime, time, timedelta
+from importlib import resources
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from fastapi import Depends, Header, HTTPException, status
 from app.auth import get_current_user
@@ -19,6 +20,16 @@ from app.models import User
 NIGHT_START_HOUR = 21  # 9 PM
 NIGHT_END_HOUR = 6  # 6 AM
 FALLBACK_TIMEZONE = "UTC"
+
+# Every school in the bundled list is in the US or its territories, so a
+# browser-reported zone is only believed if it's one of theirs (from tzdata's
+# zone.tab). Picking another US zone moves the gate by a few hours at most.
+US_COUNTRY_CODES = {"US", "PR", "GU", "VI", "AS", "MP", "UM"}
+US_TIMEZONES = frozenset(
+    columns[2]
+    for line in resources.files("tzdata.zoneinfo").joinpath("zone.tab").read_text(encoding="utf-8").splitlines()
+    if not line.startswith("#") and (columns := line.split("\t"))[0] in US_COUNTRY_CODES
+)
 
 def is_valid_timezone(tz_name: str) -> bool:
     try:
@@ -31,12 +42,12 @@ def is_valid_timezone(tz_name: str) -> bool:
 def resolve_signup_timezone(school: SchoolLookup, client_timezone: str | None) -> str:
     """Institution's timezone first (authoritative, not client-controlled).
     Falls back to the browser-reported timezone the frontend sends at
-    signup, then to UTC as a last resort if neither is available/valid.
+    signup if it's a US zone, then to UTC as a last resort.
     """
     if school.timezone and is_valid_timezone(school.timezone):
         return school.timezone
 
-    if client_timezone and is_valid_timezone(client_timezone):
+    if client_timezone in US_TIMEZONES:
         return client_timezone
 
     return FALLBACK_TIMEZONE

@@ -221,8 +221,9 @@ countdown, and it only ever goes to the signed-in student it belongs to.
 
 Chat also limits each connection to 5 messages per 5 seconds; extra messages
 are dropped, and a connection that keeps flooding is disconnected. History
-loads 50 messages at a time (`GET /rooms/{id}/messages?before=<id>`), and room
-creation is limited to 10 per hour per student.
+loads 50 messages at a time (`GET /rooms/{id}/messages?before=<id>`); after a
+dropped connection comes back, the page fetches what it missed with
+`?after=<id>`. Room creation is limited to 10 per hour per student.
 
 campus-time can't yet search by email domain, so the domain → institution
 step uses the bundled `school_domains.json` above. Once it can, that file and

@@ -69,7 +69,8 @@ async function init() {
   const roomId = params.get('id');
   const roomName = params.get('name') || 'room';
 
-  if (!roomId) {
+  // Room ids are numbers; anything else came from a hand-made link.
+  if (!/^\d+$/.test(roomId ?? '')) {
     window.location.href = '/rooms.html';
     return;
   }
@@ -97,9 +98,20 @@ async function init() {
 
   const showMessage = (msg) => renderMessage(msg, { currentUser, onOpenProfile: openProfilePopup });
 
+  // The newest message shown, so a reconnect can fetch what came after it.
+  let newestMessageId = null;
+
+  // Returns false for a message that's already shown.
   function appendMessage(msg) {
+    if (newestMessageId !== null && msg.id <= newestMessageId) return false;
+    newestMessageId = msg.id;
     chatLog.appendChild(showMessage(msg));
     chatLog.scrollTop = chatLog.scrollHeight;
+    return true;
+  }
+
+  function receiveMessage(msg) {
+    if (appendMessage(msg)) chatWindow.noteMessage();
   }
 
   // History arrives a page at a time (newest page first). A full page means
@@ -165,6 +177,9 @@ async function init() {
 
   let socket;
   let reconnectTimer = null;
+  // Live messages held back while catching up, so they land after the ones
+  // they followed.
+  let heldMessages = null;
 
   // Reconnects after a dropped connection (network blip, server restart, or
   // the server cutting off a flood of messages).
@@ -172,20 +187,40 @@ async function init() {
     if (reconnectTimer) return;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
-      connect();
+      connect({ reconnecting: true });
     }, delayMs);
   }
 
-  async function connect() {
+  // Fetches what was sent while the socket was down.
+  async function catchUp() {
+    heldMessages = [];
+    try {
+      let page;
+      do {
+        page = await getRoomMessages(roomId, { after: newestMessageId });
+        for (const msg of page) receiveMessage(msg);
+      } while (page.length === HISTORY_PAGE_SIZE);
+    } catch (err) {
+      handleHistoryError(err);
+    } finally {
+      for (const msg of heldMessages) receiveMessage(msg);
+      heldMessages = null;
+    }
+  }
+
+  async function connect({ reconnecting = false } = {}) {
     setStatus('connecting…', '');
     socket = await connectRoomSocket(roomId);
 
-    socket.addEventListener('open', () => setStatus('connected', 'connected'));
+    socket.addEventListener('open', () => {
+      setStatus('connected', 'connected');
+      if (reconnecting) catchUp();
+    });
 
     socket.addEventListener('message', (event) => {
       const data = JSON.parse(event.data);
-      appendMessage(data);
-      chatWindow.noteMessage();
+      if (heldMessages) heldMessages.push(data);
+      else receiveMessage(data);
     });
 
     socket.addEventListener('close', (event) => {
