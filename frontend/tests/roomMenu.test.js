@@ -1,0 +1,84 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { roomMenuItems } from '../src/roomMenu.js';
+
+let ctx;
+
+function message(userId, name, text) {
+  const msg = document.createElement('div');
+  msg.className = 'msg';
+  msg.dataset.userId = userId;
+  msg.innerHTML = '<button class="msg-author"></button><div class="msg-body"></div>';
+  msg.querySelector('.msg-author').textContent = name;
+  msg.querySelector('.msg-body').textContent = text;
+  document.body.append(msg);
+  return msg;
+}
+
+const labels = (items) => items.map((item) => item.label);
+
+beforeEach(() => {
+  document.body.innerHTML = '<p class="spot"></p>';
+  ctx = {
+    currentUserId: 1,
+    lampOn: () => false,
+    chatHidden: () => false,
+    hiddenVideos: () => 0,
+    inCall: () => false,
+    actions: {
+      viewProfile: vi.fn(),
+      copy: vi.fn(),
+      block: vi.fn(),
+      lamp: vi.fn(),
+      openChat: vi.fn(),
+      showVideos: vi.fn(),
+      myProfile: vi.fn(),
+      logOut: vi.fn(),
+    },
+  };
+});
+
+describe("the room's right-click menu", () => {
+  it("offers profile, copy and block on someone else's message", () => {
+    const msg = message(2, 'night_owl', 'anyone up?');
+    const items = roomMenuItems(msg.querySelector('.msg-body'), ctx);
+
+    expect(labels(items)).toEqual(['View profile', 'Copy message', 'Block night_owl']);
+    expect(items[2].confirmLabel).toBe('Sure? Block night_owl');
+
+    items[0].action();
+    items[1].action();
+    items[2].action();
+    expect(ctx.actions.viewProfile.mock.calls[0].slice(0, 2)).toEqual([2, 'night_owl']);
+    expect(ctx.actions.copy).toHaveBeenCalledWith('anyone up?');
+    expect(ctx.actions.block).toHaveBeenCalledWith(2);
+  });
+
+  it('offers no Block on your own message', () => {
+    const msg = message(1, 'me_myself', 'hi');
+    expect(labels(roomMenuItems(msg, ctx))).toEqual(['View profile', 'Copy message']);
+  });
+
+  it('offers the room actions anywhere else', () => {
+    expect(labels(roomMenuItems(document.querySelector('.spot'), ctx))).toEqual(['Lamp on', 'My profile', 'Log out']);
+  });
+
+  it('names Lamp by what it will do, and offers chat and videos only when they are closed', () => {
+    ctx.lampOn = () => true;
+    ctx.chatHidden = () => true;
+    ctx.hiddenVideos = () => 2;
+
+    expect(labels(roomMenuItems(document.querySelector('.spot'), ctx))).toEqual([
+      'Lamp off',
+      'Open chat',
+      'Show videos (2)',
+      'My profile',
+      'Log out',
+    ]);
+  });
+
+  it('greys out Log out during a video call', () => {
+    ctx.inCall = () => true;
+    const logOut = roomMenuItems(document.querySelector('.spot'), ctx).find((item) => item.label === 'Log out');
+    expect(logOut.disabled).toBe(true);
+  });
+});

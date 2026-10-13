@@ -4,12 +4,12 @@
 //
 // Categories (the cookie banner and the Privacy Policy describe the same):
 //   essential   -- always on: sign-in (Clerk), bot protection, session info
-//   preferences -- remembering the Night/Lamp theme between visits
+//   preferences -- remembering the Night/Lamp theme and the cursor choice between visits
 //   diagnostics -- crash reports to Sentry
 
 // Bump this whenever the Privacy Policy's cookie section changes, so
 // everyone is asked again.
-export const CONSENT_VERSION = '2026-10-01';
+export const CONSENT_VERSION = '2026-10-13';
 export const CONSENT_EVENT = 'nightcord:consent';
 const CONSENT_KEY = 'nightcord_consent'; // itself essential: it's how "no" is remembered
 

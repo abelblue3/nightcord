@@ -23,6 +23,9 @@ import {
   connectRoomSocket,
   getRoomMessages,
   getVideoToken,
+  listBlocks,
+  blockStudent,
+  unblockStudent,
   checkSignupEmail,
   syncConsent,
   REAUTH_INTERVAL_MS,
@@ -340,6 +343,20 @@ describe('getRoomMessages', () => {
     mockFetchOnce(200, []);
     await getRoomMessages(7, { after: 456 });
     expect(global.fetch.mock.calls[0][0]).toMatch(/\/rooms\/7\/messages\?after=456$/);
+  });
+});
+
+describe('blocks', () => {
+  it('lists, blocks and unblocks, signed in', async () => {
+    mockFetchSequence([200, [{ id: 4, display_name: 'b', avatar_url: null }]], [204, null], [204, null]);
+
+    expect(await listBlocks()).toEqual([{ id: 4, display_name: 'b', avatar_url: null }]);
+    await blockStudent(4);
+    await unblockStudent(4);
+
+    const calls = global.fetch.mock.calls.map(([url, options]) => [url.replace(/^.*?\/me/, '/me'), options.method]);
+    expect(calls).toEqual([['/me/blocks', 'GET'], ['/me/blocks/4', 'PUT'], ['/me/blocks/4', 'DELETE']]);
+    expect(global.fetch.mock.calls[1][1].headers.Authorization).toBe('Bearer clerk-token-1');
   });
 });
 

@@ -171,6 +171,19 @@ export async function getProfile(userId) {
   return request(`/users/${encodeURIComponent(userId)}/profile`, { auth: true });
 }
 
+// Blocking needs sign-in only, so it works in the daytime too.
+export async function listBlocks() {
+  return request('/me/blocks', { auth: true });
+}
+
+export async function blockStudent(userId) {
+  return request(`/me/blocks/${encodeURIComponent(userId)}`, { method: 'PUT', auth: true });
+}
+
+export async function unblockStudent(userId) {
+  return request(`/me/blocks/${encodeURIComponent(userId)}`, { method: 'DELETE', auth: true });
+}
+
 // A LiveKit token for the room's video call (see video.js).
 export async function getVideoToken(roomId) {
   return request(`/rooms/${encodeURIComponent(roomId)}/video-token`, { method: 'POST', auth: true });

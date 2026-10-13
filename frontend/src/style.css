@@ -52,6 +52,42 @@
   box-sizing: border-box;
 }
 
+/* Pixel cursors (public/cursors), each with the system one as fallback. The
+   system cursors come back when the Settings switch is off, and in Windows
+   high-contrast mode, for people who rely on a large or high-contrast one. */
+:root {
+  --cursor-arrow: url('/cursors/arrow.svg') 0 0, default;
+  --cursor-hand: url('/cursors/hand.svg') 5 0, pointer;
+}
+
+:root[data-cursor='system'] {
+  --cursor-arrow: default;
+  --cursor-hand: pointer;
+}
+
+@media (forced-colors: active) {
+  :root {
+    --cursor-arrow: default;
+    --cursor-hand: pointer;
+  }
+}
+
+body {
+  cursor: var(--cursor-arrow);
+}
+
+a[href],
+summary,
+label:has(input) {
+  cursor: var(--cursor-hand);
+}
+
+/* Text fields keep the normal text cursor. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']),
+textarea {
+  cursor: text;
+}
+
 html,
 body {
   margin: 0;
@@ -180,7 +216,7 @@ a {
   border: var(--border-w) solid var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
   padding: 12px 16px;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
   transition: transform 0.05s ease, box-shadow 0.05s ease;
   line-height: 1.4;
 }
@@ -226,7 +262,7 @@ a {
   border: none;
   padding: 0;
   text-decoration: underline;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .btn-link:hover {
@@ -305,7 +341,7 @@ a {
   border: var(--border-w) solid var(--ink);
   box-shadow: 3px 3px 0 var(--ink);
   padding: 14px 16px;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
   text-align: left;
   width: 100%;
   font-family: var(--font-body);
@@ -381,7 +417,7 @@ a {
   padding: 0;
   background: none;
   border: 0;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .msg-author {
@@ -391,7 +427,7 @@ a {
   padding: 0;
   background: none;
   border: 0;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .msg-author:hover,
@@ -499,7 +535,7 @@ a {
   padding: 2px;
   background: none;
   border: none;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .avatar-button:focus-visible {
@@ -538,7 +574,7 @@ a {
   text-decoration: none;
   background: none;
   border: 0;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .retro-menu-item:hover,
@@ -546,6 +582,21 @@ a {
   background: var(--titlebar);
   color: var(--titlebar-ink);
   outline: none;
+}
+
+/* The room's right-click menu: the same drop-down, placed at the pointer and
+   above every floating window (their layers count up from 100). */
+.context-menu {
+  position: fixed;
+  right: auto;
+  top: auto;
+  z-index: 1000000;
+}
+
+.retro-menu-item:disabled {
+  color: var(--ink-soft);
+  background: none;
+  cursor: not-allowed;
 }
 
 /* --- profile page and profile cards --- */
@@ -640,7 +691,7 @@ a {
   gap: 8px;
   margin-bottom: 12px;
   font-size: 1.1rem;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .choice input {
@@ -651,7 +702,7 @@ a {
   margin: 0;
   border: 2px solid var(--ink);
   background: var(--bg);
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .choice input:checked {
@@ -762,6 +813,37 @@ a {
 .account-facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+.blocked-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 1.1rem;
+}
+
+.blocked-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.blocked-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.blocked-empty {
+  color: var(--ink-soft);
+}
+
+.blocked-error {
+  flex-basis: 100%;
+  color: var(--danger);
 }
 
 /* The card: on the profile page's preview and in chat's profile popups. */
@@ -927,7 +1009,7 @@ a {
   border: 2px solid;
   border-color: var(--chrome-light) var(--chrome-dark) var(--chrome-dark) var(--chrome-light);
   border-radius: 0;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .retro-title-button {
@@ -1134,6 +1216,20 @@ a {
   display: inline-block;
   margin: 0 16px 16px;
   text-decoration: none;
+}
+
+/* Block / Undo under someone's profile in a popup. */
+.profile-block-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 0 16px 16px;
+}
+
+.profile-block-row p {
+  margin: 0;
+  color: var(--ink-soft);
 }
 
 /* --- misc --- */
@@ -1363,7 +1459,7 @@ body:has(.consent-banner) {
   gap: 12px;
   align-items: flex-start;
   margin-bottom: 14px;
-  cursor: pointer;
+  cursor: var(--cursor-hand);
 }
 
 .consent-category input {

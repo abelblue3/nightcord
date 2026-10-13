@@ -1,9 +1,11 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket } from './api.js';
+import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket, listBlocks, blockStudent } from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
-import { initThemeToggle } from './theme.js';
+import { getTheme, initThemeToggle } from './theme.js';
+import { initContextMenu } from './contextMenu.js';
+import { roomMenuItems } from './roomMenu.js';
 import { initAvatarMenu } from './avatarMenu.js';
 import { renderMessage } from './chatMessage.js';
 import { createWindow } from './floatingWindow.js';
@@ -47,6 +49,8 @@ function openChatWindow(title, openButton) {
   placeholder.style.height = `${win.element.offsetHeight}px`;
 
   return {
+    isHidden: () => win.element.hidden,
+    open: () => openButton.click(),
     noteMessage() {
       if (!win.element.hidden) return;
       unread += 1;
@@ -96,7 +100,28 @@ async function init() {
     statusEl.className = `connection-status ${cls}`;
   }
 
-  const showMessage = (msg) => renderMessage(msg, { currentUser, onOpenProfile: openProfilePopup });
+  // Students you've blocked. The backend already leaves out their messages;
+  // the page also hides their video and clears what's on screen when you
+  // block someone. If the list can't load, nothing extra is hidden.
+  const blocked = new Set((await listBlocks().catch(() => [])).map((student) => student.id));
+
+  const blockHandlers = {
+    onBlock(userId) {
+      blocked.add(userId);
+      for (const msg of chatLog.querySelectorAll(`.msg[data-user-id="${userId}"]`)) msg.remove();
+      video.hide(userId);
+    },
+    onUnblock(userId) {
+      blocked.delete(userId);
+      video.show(userId);
+    },
+  };
+
+  const showMessage = (msg) =>
+    renderMessage(msg, {
+      currentUser,
+      onOpenProfile: (userId, name, at) => openProfilePopup(userId, name, at, blockHandlers),
+    });
 
   // The newest message shown, so a reconnect can fetch what came after it.
   let newestMessageId = null;
@@ -167,13 +192,42 @@ async function init() {
     }
   });
 
+  let inVideoCall = false;
   const video = initVideo(roomId, {
     joinButton: document.getElementById('video-join'),
     layer: document.getElementById('video-layer'),
     showButton: document.getElementById('videos-show'),
     onError: handleHistoryError, // the same closed-screen / error-box handling
-    onCallChange: (inCall) => avatarMenu.setInCall(inCall),
+    onCallChange: (inCall) => {
+      inVideoCall = inCall;
+      avatarMenu.setInCall(inCall);
+    },
+    isBlocked: (identity) => blocked.has(Number(identity)), // LiveKit identity = user id
   });
+
+  // Right-click anywhere in the room: a retro menu in place of the browser's.
+  initContextMenu(document.querySelector('.screen'), (target) =>
+    roomMenuItems(target, {
+      currentUserId: currentUser?.id,
+      lampOn: () => getTheme() === 'lamp',
+      chatHidden: chatWindow.isHidden,
+      hiddenVideos: video.hiddenCount,
+      inCall: () => inVideoCall,
+      actions: {
+        viewProfile: (userId, name, at) => openProfilePopup(userId, name, at, blockHandlers),
+        copy: (text) => navigator.clipboard?.writeText(text),
+        block: (userId) =>
+          blockStudent(userId)
+            .then(() => blockHandlers.onBlock(userId))
+            .catch((err) => showError(err.message)),
+        lamp: () => document.getElementById('theme-toggle').click(),
+        openChat: chatWindow.open,
+        showVideos: () => document.getElementById('videos-show').click(),
+        myProfile: () => window.open('/profile.html', '_blank'), // a new tab keeps a call going
+        logOut: signOut,
+      },
+    }),
+  );
 
   let socket;
   let reconnectTimer = null;

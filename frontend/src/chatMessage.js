@@ -12,6 +12,7 @@ export function renderMessage({ display_name, content, created_at, user_id, avat
   const name = display_name || 'someone';
   const wrap = document.createElement('div');
   wrap.className = 'msg' + (currentUser && user_id === currentUser.id ? ' own' : '');
+  wrap.dataset.userId = user_id; // so blocking someone can remove theirs
 
   // The avatar and the name open the same popup; only the name is a tab stop.
   const avatar = document.createElement('button');

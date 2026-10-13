@@ -1,11 +1,13 @@
 import './sentry.js';
 import './style.css';
-import { getMyProfile, requireAuth, updateMyProfile } from './api.js';
+import { getMyProfile, listBlocks, requireAuth, unblockStudent, updateMyProfile } from './api.js';
 import { renderAvatar } from './avatar.js';
+import { renderBlockedList } from './blockedList.js';
 import { initAvatarMenu } from './avatarMenu.js';
 import { initConsentBanner } from './consentBanner.js';
 import { renderProfileCard, SOCIALS } from './profileCard.js';
 import { checkPayload, formToPayload, MAX_PROJECTS, previewProfile, serverFieldErrors } from './profileForm.js';
+import { initCursorSetting } from './cursor.js';
 import { getTheme, initThemeToggle, setTheme } from './theme.js';
 import { clearFieldError, loadingLine, setBusy, showFieldError } from './ui.js';
 
@@ -29,6 +31,7 @@ async function init() {
   initThemeToggle(themeToggle);
   initAvatarMenu(document.getElementById('avatar-menu'));
   initLampSetting(themeToggle);
+  initCursorSetting(document.getElementById('cursor-setting'));
 
   function showError(message) {
     errorBox.textContent = message;
@@ -49,6 +52,10 @@ async function init() {
   buildProjectRows(document.getElementById('project-rows'), addProject);
   fillForm(form, own);
   fillAccount(own);
+  const blockedList = document.getElementById('blocked-list');
+  listBlocks()
+    .then((students) => renderBlockedList(blockedList, students, { unblock: unblockStudent }))
+    .catch((err) => (blockedList.textContent = `ERR: ${err.message}`));
 
   const renderPreview = () => preview.replaceChildren(renderProfileCard(previewProfile(formToPayload(form), own)));
   renderPreview();

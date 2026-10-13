@@ -42,6 +42,10 @@ const lk = vi.hoisted(() => {
     emit(event, ...args) {
       this.handlers[event]?.(...args);
     }
+
+    getParticipantByIdentity(identity) {
+      return this.remoteParticipants.get(identity);
+    }
   }
   return { RoomEvent, Room, state };
 });
@@ -54,6 +58,8 @@ import { initVideo } from '../src/video.js';
 
 let els;
 let onError;
+let video;
+let blocked;
 
 async function join() {
   els.joinButton.click();
@@ -78,8 +84,15 @@ beforeEach(() => {
   els = { joinButton, showButton: document.createElement('button'), layer: document.createElement('div') };
   document.body.append(els.showButton, els.layer);
   onError = vi.fn();
-  initVideo('7', { ...els, onError });
+  blocked = new Set();
+  video = initVideo('7', { ...els, onError, isBlocked: (identity) => blocked.has(identity) });
 });
+
+// A remote student whose tracks the page can switch off.
+function student(identity, name) {
+  const publication = { kind: 'audio', setSubscribed: vi.fn() };
+  return { participant: { identity, name, trackPublications: new Map([['a', publication]]) }, publication };
+}
 
 describe('the room video call', () => {
   it('shows no call controls until you join', () => {
@@ -201,6 +214,36 @@ describe('the room video call', () => {
     els.showButton.click();
     expect(windowOf('Sam').hidden).toBe(false);
     expect(els.showButton.hidden).toBe(true);
+  });
+
+  it('a blocked student gets no window, and their sound is switched off', async () => {
+    blocked.add('2');
+    const room = await join();
+    const { participant, publication } = student('2', 'Sam');
+
+    room.emit('participantConnected', participant);
+    room.emit('trackSubscribed', fakeTrack('audio'), publication, participant);
+
+    expect(windowOf('Sam')).toBeUndefined();
+    expect(publication.setSubscribed).toHaveBeenCalledWith(false);
+  });
+
+  it('blocking mid-call removes their window and sound; unblocking brings them back', async () => {
+    const room = await join();
+    const { participant, publication } = student('2', 'Sam');
+    room.remoteParticipants.set('2', participant);
+    room.emit('participantConnected', participant);
+    room.emit('trackSubscribed', fakeTrack('audio'), publication, participant);
+    expect(windowOf('Sam')).toBeDefined();
+
+    blocked.add('2');
+    video.hide(2);
+    expect(windowOf('Sam')).toBeUndefined();
+    expect(publication.setSubscribed).toHaveBeenLastCalledWith(false);
+
+    blocked.delete('2');
+    video.show(2);
+    expect(publication.setSubscribed).toHaveBeenLastCalledWith(true);
   });
 
   it('× on your own window leaves: devices stopped, page put back as it was', async () => {
