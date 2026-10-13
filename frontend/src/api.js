@@ -184,6 +184,16 @@ export async function unblockStudent(userId) {
   return request(`/me/blocks/${encodeURIComponent(userId)}`, { method: 'DELETE', auth: true });
 }
 
+// A report for review. roomId / messageId are optional (JSON leaves out
+// undefined), and the reply never includes the room's messages.
+export async function reportStudent({ reportedId, reason, roomId, messageId, details }) {
+  return request('/reports', {
+    method: 'POST',
+    body: { reported_id: reportedId, reason, room_id: roomId, message_id: messageId, details },
+    auth: true,
+  });
+}
+
 // A LiveKit token for the room's video call (see video.js).
 export async function getVideoToken(roomId) {
   return request(`/rooms/${encodeURIComponent(roomId)}/video-token`, { method: 'POST', auth: true });

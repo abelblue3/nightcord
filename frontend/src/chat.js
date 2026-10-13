@@ -10,6 +10,7 @@ import { initAvatarMenu } from './avatarMenu.js';
 import { renderMessage } from './chatMessage.js';
 import { createWindow } from './floatingWindow.js';
 import { openProfilePopup } from './profilePopup.js';
+import { openReportWindow } from './reportWindow.js';
 import { loadingLine, setBusy } from './ui.js';
 import { initVideo } from './video.js';
 
@@ -115,6 +116,18 @@ async function init() {
       blocked.delete(userId);
       video.show(userId);
     },
+    // From a profile popup: the report carries this room's recent messages.
+    onReport(userId, name, messageId) {
+      openReportWindow(
+        { userId, name },
+        {
+          roomId: Number(roomId),
+          messageId,
+          isBlocked: (id) => blocked.has(id),
+          onBlock: blockHandlers.onBlock,
+        },
+      );
+    },
   };
 
   const showMessage = (msg) =>
@@ -216,6 +229,7 @@ async function init() {
       actions: {
         viewProfile: (userId, name, at) => openProfilePopup(userId, name, at, blockHandlers),
         copy: (text) => navigator.clipboard?.writeText(text),
+        report: blockHandlers.onReport, // with the right-clicked message
         block: (userId) =>
           blockStudent(userId)
             .then(() => blockHandlers.onBlock(userId))

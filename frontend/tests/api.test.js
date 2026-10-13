@@ -26,6 +26,7 @@ import {
   listBlocks,
   blockStudent,
   unblockStudent,
+  reportStudent,
   checkSignupEmail,
   syncConsent,
   REAUTH_INTERVAL_MS,
@@ -357,6 +358,20 @@ describe('blocks', () => {
     const calls = global.fetch.mock.calls.map(([url, options]) => [url.replace(/^.*?\/me/, '/me'), options.method]);
     expect(calls).toEqual([['/me/blocks', 'GET'], ['/me/blocks/4', 'PUT'], ['/me/blocks/4', 'DELETE']]);
     expect(global.fetch.mock.calls[1][1].headers.Authorization).toBe('Bearer clerk-token-1');
+  });
+});
+
+describe('reportStudent', () => {
+  it('posts the report, signed in, leaving out what was not given', async () => {
+    mockFetchOnce(201, { message: 'Report received.' });
+
+    await reportStudent({ reportedId: 4, reason: 'spam', roomId: 7 });
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toMatch(/\/reports$/);
+    expect(options.method).toBe('POST');
+    expect(JSON.parse(options.body)).toEqual({ reported_id: 4, reason: 'spam', room_id: 7 });
+    expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
   });
 });
 

@@ -3,10 +3,11 @@ import { roomMenuItems } from '../src/roomMenu.js';
 
 let ctx;
 
-function message(userId, name, text) {
+function message(userId, name, text, messageId = 55) {
   const msg = document.createElement('div');
   msg.className = 'msg';
   msg.dataset.userId = userId;
+  msg.dataset.messageId = messageId;
   msg.innerHTML = '<button class="msg-author"></button><div class="msg-body"></div>';
   msg.querySelector('.msg-author').textContent = name;
   msg.querySelector('.msg-body').textContent = text;
@@ -28,6 +29,7 @@ beforeEach(() => {
       viewProfile: vi.fn(),
       copy: vi.fn(),
       block: vi.fn(),
+      report: vi.fn(),
       lamp: vi.fn(),
       openChat: vi.fn(),
       showVideos: vi.fn(),
@@ -38,18 +40,17 @@ beforeEach(() => {
 });
 
 describe("the room's right-click menu", () => {
-  it("offers profile, copy and block on someone else's message", () => {
+  it("offers profile, copy, report and block on someone else's message", () => {
     const msg = message(2, 'night_owl', 'anyone up?');
     const items = roomMenuItems(msg.querySelector('.msg-body'), ctx);
 
-    expect(labels(items)).toEqual(['View profile', 'Copy message', 'Block night_owl']);
-    expect(items[2].confirmLabel).toBe('Sure? Block night_owl');
+    expect(labels(items)).toEqual(['View profile', 'Copy message', 'Report night_owl…', 'Block night_owl']);
+    expect(items[3].confirmLabel).toBe('Sure? Block night_owl');
 
-    items[0].action();
-    items[1].action();
-    items[2].action();
+    items.forEach((item) => item.action());
     expect(ctx.actions.viewProfile.mock.calls[0].slice(0, 2)).toEqual([2, 'night_owl']);
     expect(ctx.actions.copy).toHaveBeenCalledWith('anyone up?');
+    expect(ctx.actions.report).toHaveBeenCalledWith(2, 'night_owl', 55); // with the message
     expect(ctx.actions.block).toHaveBeenCalledWith(2);
   });
 
