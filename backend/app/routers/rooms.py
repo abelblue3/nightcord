@@ -3,13 +3,14 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from livekit import api as livekit
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app import gate
 from app.config import settings
 from app.database import get_db
 from app.gate import require_night_access
-from app.models import Message, Room, User
+from app.models import Block, Message, Room, User
 from app.rate_limit import limiter, user_or_ip_key
 from app.schemas import MessageOut, RoomCreate, RoomOut, VideoTokenOut
 
@@ -56,7 +57,7 @@ def get_room_messages(
     after: int | None = Query(default=None, ge=1, description="Only messages newer than this message id."),
     limit: int = Query(default=MESSAGE_PAGE_SIZE, ge=1, le=MAX_MESSAGE_PAGE_SIZE),
     db: Session = Depends(get_db),
-    _: User = Depends(require_night_access),
+    current_user: User = Depends(require_night_access),
 ) -> list[Message]:
     """One page of history, oldest first: the newest `limit` messages, or
     the `limit` messages just before `before` when paging back further, or
@@ -71,6 +72,9 @@ def get_room_messages(
         db.query(Message)
         .options(joinedload(Message.author))  # display_name for every message, without a query per message
         .filter(Message.room_id == room_id)
+        # Hidden in the query, before the LIMIT, so a page is still full and
+        # "Load earlier" and the reconnect catch-up don't stop early.
+        .filter(Message.user_id.not_in(select(Block.blocked_id).where(Block.blocker_id == current_user.id)))
     )
     if before is not None:
         query = query.filter(Message.id < before)

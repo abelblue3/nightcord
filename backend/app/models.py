@@ -82,6 +82,18 @@ class Message(Base):
         return self.author.avatar_url
 
 
+class Block(Base):
+    """`blocker` no longer sees `blocked`'s messages or profile, and `blocked`
+    can't open `blocker`'s profile. One row per pair."""
+
+    __tablename__ = "blocks"
+
+    blocker_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    # Indexed on its own: every chat message asks who blocked its sender.
+    blocked_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ConsentRecord(Base):
     """One row per cookie/data choice a signed-in student makes -- never
     updated, so the history shows what they agreed to and when (proof of

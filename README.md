@@ -184,11 +184,16 @@ no session cookie, and ordinary requests never call Clerk.
   avatar for your Google/Microsoft photo. School and timezone are read-only.
   Sign-in only — works outside night hours too
 - `GET /users/{id}/profile` — another student's public profile: no email,
-  the name only if they show it, and only their visible socials (auth)
+  the name only if they show it, and only their visible socials (auth). A
+  block either way makes it a 404
+- `GET /me/blocks` / `PUT /me/blocks/{id}` / `DELETE /me/blocks/{id}` — the
+  students you've blocked; block; unblock. You stop seeing a blocked
+  student's messages (history and live) and profile, they can't open yours,
+  and they aren't told. Sign-in only — works outside night hours too
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
-- `GET /rooms/{room_id}/messages` — chat history for a room, with author names (auth + night gate)
+- `GET /rooms/{room_id}/messages` — chat history for a room, with author names, minus anyone you blocked (auth + night gate)
 - `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);
-  it expires at 6am at the student's school and allows camera and mic only. Needs `LIVEKIT_URL`,
+  it lasts 10 minutes (never past 6am at the student's school) and allows camera and mic only. Needs `LIVEKIT_URL`,
   `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`; without them it returns 503
 - `WS /ws/rooms/{room_id}` — realtime chat over WebSocket. The first message must be
   `{"type": "auth", "token": "<Clerk session token>"}` (browsers can't set

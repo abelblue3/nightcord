@@ -147,6 +147,14 @@ class OwnProfileOut(BaseModel):
     socials: dict[str, Social]
     projects: list[Project]
 
+class BlockedStudentOut(BaseModel):
+    id: int
+    display_name: str
+    avatar_url: str | None
+
+    class Config:
+        from_attributes = True
+
 class MessageResponse(BaseModel):
     message: str
 

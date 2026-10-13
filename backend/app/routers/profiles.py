@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.auth import email_domain, get_current_user
 from app.campus_time import school_name
 from app.database import get_db
-from app.models import User
+from app.models import Block, User
 from app.rate_limit import limiter, user_or_ip_key
 from app.schemas import OwnProfileOut, ProfileUpdate, PublicProfileOut
 
@@ -99,10 +99,13 @@ def get_public_profile(
     request: Request,
     user_id: int,
     db: Session = Depends(get_db),
-    _: User = Depends(get_current_user),
+    viewer: User = Depends(get_current_user),
 ) -> PublicProfileOut:
     person = db.get(User, user_id)
-    if not person:
+    # A block either way hides the profile, worded like a missing student so
+    # the blocked one isn't told.
+    blocked = db.get(Block, (viewer.id, user_id)) or db.get(Block, (user_id, viewer.id))
+    if not person or blocked:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such student.")
     return PublicProfileOut(
         id=person.id,
