@@ -94,6 +94,27 @@ class Block(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class Report(Base):
+    """A student reporting another, for whoever reviews reports (by SQL in
+    Railway's console until there's a review tool). `snapshot` is a copy of
+    the room's messages up to the report, so it survives the messages or
+    the account being deleted later; `message_id` has no foreign key for
+    the same reason."""
+
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reporter_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    reported_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    room_id: Mapped[int | None] = mapped_column(ForeignKey("rooms.id"))
+    message_id: Mapped[int | None] = mapped_column(Integer)
+    reason: Mapped[str] = mapped_column(String(20), nullable=False)
+    details: Mapped[str | None] = mapped_column(String(500))
+    snapshot: Mapped[list] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="open", server_default="open")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class ConsentRecord(Base):
     """One row per cookie/data choice a signed-in student makes -- never
     updated, so the history shows what they agreed to and when (proof of

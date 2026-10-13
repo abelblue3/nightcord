@@ -190,6 +190,11 @@ no session cookie, and ordinary requests never call Clerk.
   students you've blocked; block; unblock. You stop seeing a blocked
   student's messages (history and live) and profile, they can't open yours,
   and they aren't told. Sign-in only — works outside night hours too
+- `POST /reports` — report a student: `reported_id`, `reason` (`harassment`,
+  `hate`, `sexual`, `spam`, `self_harm`, `other`), optional `room_id`,
+  `message_id` (needs its `room_id`) and `details` (≤500). Saves a copy of the
+  room's last 50 messages, up to the reported one, for review; the reply never
+  includes them. Sign-in only, 10 per hour (see "Reviewing reports" below)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names, minus anyone you blocked (auth + night gate)
 - `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);
@@ -202,6 +207,27 @@ no session cookie, and ordinary requests never call Clerk.
   `gate-closed:<timezone>` (also at 6am while connected), or `session-expired`
   (no fresher token within a minute of the last one expiring)
 - `GET /health` — health check
+
+### Reviewing reports
+
+There's no review tool yet: reports live in the `reports` table, read in the
+Railway database console. Open reports, newest first, with who was involved:
+
+```sql
+SELECT r.id, r.created_at, r.reason, r.details,
+       reporter.display_name AS reporter, reported.display_name AS reported,
+       r.room_id, r.message_id, r.snapshot
+FROM reports r
+JOIN users reporter ON reporter.id = r.reporter_id
+JOIN users reported ON reported.id = r.reported_id
+WHERE r.status = 'open'
+ORDER BY r.created_at DESC;
+```
+
+`snapshot` is a copy of the room's messages up to the report (oldest first),
+so it still reads the same if messages or accounts are deleted later. Mark a
+report done with `UPDATE reports SET status = 'reviewed' WHERE id = …;` (or
+`'dismissed'`).
 
 ### Night gate
 

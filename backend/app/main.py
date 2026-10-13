@@ -8,7 +8,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from app import clerk_auth
 from app.config import settings
 from app.rate_limit import limiter
-from app.routers import auth, blocks, chat, consent, profiles, rooms
+from app.routers import auth, blocks, chat, consent, profiles, reports, rooms
 
 if settings.sentry_dsn:
     sentry_sdk.init(
@@ -68,6 +68,7 @@ app.include_router(chat.router)
 app.include_router(consent.router)
 app.include_router(profiles.router)
 app.include_router(blocks.router)
+app.include_router(reports.router)
 
 
 @app.get("/health")
