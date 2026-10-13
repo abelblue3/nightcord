@@ -2,7 +2,7 @@ import re
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, EmailStr, Field, StringConstraints, field_validator
+from pydantic import AfterValidator, BaseModel, EmailStr, Field, StringConstraints, field_validator, model_validator
 
 from app.usernames import USERNAME_PATTERN
 
@@ -154,6 +154,19 @@ class BlockedStudentOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ReportIn(BaseModel):
+    reported_id: int
+    reason: Literal["harassment", "hate", "sexual", "spam", "self_harm", "other"]
+    room_id: int | None = None
+    message_id: int | None = None  # needs its room_id
+    details: Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)] | None = None
+
+    @model_validator(mode="after")
+    def message_needs_its_room(self) -> "ReportIn":
+        if self.message_id is not None and self.room_id is None:
+            raise ValueError("Say which room the message is in.")
+        return self
 
 class MessageResponse(BaseModel):
     message: str
