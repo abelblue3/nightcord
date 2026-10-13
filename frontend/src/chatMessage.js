@@ -8,11 +8,12 @@ function formatTime(iso) {
   return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-export function renderMessage({ display_name, content, created_at, user_id, avatar_url }, { currentUser, onOpenProfile }) {
+export function renderMessage({ id, display_name, content, created_at, user_id, avatar_url }, { currentUser, onOpenProfile }) {
   const name = display_name || 'someone';
   const wrap = document.createElement('div');
   wrap.className = 'msg' + (currentUser && user_id === currentUser.id ? ' own' : '');
   wrap.dataset.userId = user_id; // so blocking someone can remove theirs
+  wrap.dataset.messageId = id; // so a report can point at this message
 
   // The avatar and the name open the same popup; only the name is a tab stop.
   const avatar = document.createElement('button');

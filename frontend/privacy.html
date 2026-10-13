@@ -34,6 +34,7 @@
           <li><strong>Account details</strong> — your school email address and name or display name. Sign-up, sign-in and passwords are handled by our authentication provider, Clerk; we never see or store your password. If you choose “Continue with Google” or “Microsoft”, that provider shares your name and email with us.</li>
           <li><strong>School and timezone</strong> — worked out from your email’s domain, so study rooms open at night where your school is. If your school’s timezone isn’t known, we use the one your browser reports.</li>
           <li><strong>What you post</strong> — rooms you create and the messages you send. These are visible to other signed-in students during night hours.</li>
+          <li><strong>Reports</strong> — if you report a student, we keep your report (who, why, and any details you add) together with a copy of the room’s recent messages, so whoever reviews it sees the conversation. If you are reported, the same copy includes your messages. Reports are only used to keep nightcord safe.</li>
           <li><strong>Video and audio</strong> — only if you join a room’s video call and switch on your camera or mic, which your browser asks you to allow first. It goes live to the others in the call and is never recorded or stored.</li>
           <li><strong>Technical information</strong> — your IP address, used briefly to limit abuse (rate limiting) and not stored; and basic server logs (which page or endpoint was requested and when — never message contents or passwords).</li>
           <li><strong>Crash reports</strong> — only if you turn on Diagnostics (see Cookies below): technical details of an error, without your name or email.</li>
@@ -90,6 +91,7 @@
           <li>Account details: while your account exists.</li>
           <li>Messages and rooms: [MESSAGE RETENTION], or until removed.</li>
           <li>Consent records: [CONSENT RECORD RETENTION], as proof of consent.</li>
+          <li>Reports and their copy of messages: [REPORT RETENTION], even if the messages or account are deleted, so a report can still be reviewed.</li>
           <li>Server logs: [LOG RETENTION].</li>
         </ul>
 

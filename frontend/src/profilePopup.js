@@ -8,9 +8,10 @@ import { loadingLine, setBusy } from './ui.js';
 
 const open = new Map(); // user id -> window
 
-// Block, after a second click to confirm, then Undo. `onBlock(userId)` /
-// `onUnblock(userId)` let the room page hide or keep that student.
-function blockControls(userId, { onBlock, onUnblock }) {
+// Report (handed to the room page, which knows the room) and Block, after a
+// second click to confirm, then Undo. `onBlock(userId)` / `onUnblock(userId)`
+// let the room page hide or keep that student.
+function blockControls(userId, displayName, { onBlock, onUnblock, onReport }) {
   const row = document.createElement('div');
   row.className = 'profile-block-row';
 
@@ -55,11 +56,19 @@ function blockControls(userId, { onBlock, onUnblock }) {
       note(`ERR: ${err.message}`);
     }
   });
+  if (onReport) {
+    const report = document.createElement('button');
+    report.type = 'button';
+    report.className = 'btn btn-small profile-report';
+    report.textContent = 'Report';
+    report.addEventListener('click', () => onReport(userId, displayName));
+    row.append(report);
+  }
   row.append(block);
   return row;
 }
 
-export async function openProfilePopup(userId, displayName, at, { onBlock, onUnblock } = {}) {
+export async function openProfilePopup(userId, displayName, at, { onBlock, onUnblock, onReport } = {}) {
   const existing = open.get(userId);
   if (existing) {
     existing.show();
@@ -96,7 +105,7 @@ export async function openProfilePopup(userId, displayName, at, { onBlock, onUnb
       edit.textContent = 'Edit your profile';
       win.body.append(edit);
     } else {
-      win.body.append(blockControls(userId, { onBlock, onUnblock }));
+      win.body.append(blockControls(userId, displayName, { onBlock, onUnblock, onReport }));
     }
   } catch (err) {
     const error = document.createElement('p');

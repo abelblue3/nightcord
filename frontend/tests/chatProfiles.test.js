@@ -41,9 +41,10 @@ describe('chat messages', () => {
     expect(msg.querySelector('.msg-author').textContent).toBe('night_owl');
   });
 
-  it("carry the sender's id, so a block can remove them from the page", () => {
-    const msg = renderMessage(MESSAGE, { currentUser: api.me, onOpenProfile: () => {} });
+  it("carry the sender's and the message's ids, for blocking and reporting", () => {
+    const msg = renderMessage({ ...MESSAGE, id: 55 }, { currentUser: api.me, onOpenProfile: () => {} });
     expect(msg.dataset.userId).toBe('2');
+    expect(msg.dataset.messageId).toBe('55');
   });
 
   it('keep message text as text', () => {
@@ -103,9 +104,19 @@ describe('profile popups', () => {
     win.element.querySelector('[aria-label^="Close"]').click();
   });
 
+  it('offer Report, which hands over to the room page', async () => {
+    const onReport = vi.fn();
+    const win = await openProfilePopup(2, 'night_owl', undefined, { onReport });
+
+    win.body.querySelector('.profile-report').click();
+    expect(onReport).toHaveBeenCalledWith(2, 'night_owl');
+    win.element.querySelector('[aria-label^="Close"]').click();
+  });
+
   it('offer no Block button on your own profile', async () => {
     const win = await openProfilePopup(1, 'me_myself');
     expect(win.body.querySelector('.profile-block')).toBeNull();
+    expect(win.body.querySelector('.profile-report')).toBeNull();
     win.element.querySelector('[aria-label^="Close"]').click();
   });
 
