@@ -8,7 +8,7 @@ vi.mock('../src/api.js', () => ({
   unblockStudent: (...args) => api.unblockStudent(...args),
 }));
 
-import { renderMessage } from '../src/chatMessage.js';
+import { applyDeletion, renderMessage } from '../src/chatMessage.js';
 import { openProfilePopup } from '../src/profilePopup.js';
 
 const MESSAGE = { user_id: 2, display_name: 'night_owl', content: 'hi', created_at: '2026-10-09T03:00:00Z' };
@@ -47,9 +47,41 @@ describe('chat messages', () => {
     expect(msg.dataset.messageId).toBe('55');
   });
 
+  it('give only your own messages a Delete button', () => {
+    const onDelete = vi.fn();
+    const mine = renderMessage({ ...MESSAGE, id: 5, user_id: 1 }, { currentUser: api.me, onOpenProfile: () => {}, onDelete });
+    const theirs = renderMessage({ ...MESSAGE, id: 6 }, { currentUser: api.me, onOpenProfile: () => {}, onDelete });
+
+    expect(theirs.querySelector('.msg-delete')).toBeNull();
+    const button = mine.querySelector('.msg-delete');
+    expect(button.getAttribute('aria-label')).toBe('Delete message');
+    button.click();
+    expect(onDelete).toHaveBeenCalledWith(mine);
+  });
+
   it('keep message text as text', () => {
     const msg = renderMessage({ ...MESSAGE, content: '<b>x</b>' }, { currentUser: api.me, onOpenProfile: () => {} });
     expect(msg.querySelector('.msg-body b')).toBeNull();
+  });
+});
+
+describe('deleted messages', () => {
+  it("disappear from the chat, and from the live ones held during a catch-up", () => {
+    const log = document.createElement('div');
+    const keep = renderMessage({ ...MESSAGE, id: 1 }, { currentUser: api.me, onOpenProfile: () => {} });
+    const gone = renderMessage({ ...MESSAGE, id: 2 }, { currentUser: api.me, onOpenProfile: () => {} });
+    log.append(keep, gone);
+    const held = [{ ...MESSAGE, id: 3 }, { ...MESSAGE, id: 2 }];
+
+    expect(applyDeletion(log, held, { type: 'deleted', id: 2, room_id: 7 })).toBe(true);
+    expect([...log.children]).toEqual([keep]);
+    expect(held.map((m) => m.id)).toEqual([3]);
+
+    applyDeletion(log, null, { type: 'deleted', id: 3, room_id: 7 }); // nothing held, nothing shown: fine
+  });
+
+  it('leave ordinary messages alone', () => {
+    expect(applyDeletion(document.createElement('div'), [], { ...MESSAGE, id: 4 })).toBe(false);
   });
 });
 

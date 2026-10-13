@@ -239,6 +239,16 @@ a {
   background: var(--primary);
   color: var(--bg);
 }
+
+/* For what can't be undone (deleting your account). */
+.btn-danger {
+  background: var(--danger);
+  color: var(--bg);
+}
+.btn-danger:hover {
+  background: var(--danger);
+  text-decoration: underline;
+}
 .btn-primary:hover {
   background: var(--primary-dark);
 }
@@ -455,6 +465,55 @@ a {
 
 .msg.own .msg-meta {
   color: var(--good);
+}
+
+/* Delete on your own messages: shown on hover or keyboard focus (opacity,
+   not visibility, so Tab can still reach it), always on touch screens. */
+.msg .msg-delete {
+  margin-left: 8px;
+  padding: 0 4px;
+  font: inherit;
+  color: var(--ink-soft);
+  background: none;
+  border: 0;
+  cursor: var(--cursor-hand);
+  opacity: 0;
+}
+
+.msg:hover .msg-delete,
+.msg:focus-within .msg-delete {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .msg .msg-delete {
+    opacity: 1;
+  }
+}
+
+.msg .msg-delete:hover,
+.msg .msg-delete:focus-visible {
+  color: var(--danger);
+  text-decoration: underline;
+  outline: none;
+}
+
+/* Counting down to delete: dimmed at once (no smooth fade), with Undo. */
+.msg.msg-deleting .msg-meta,
+.msg.msg-deleting .msg-body,
+.msg.msg-deleting .msg-avatar {
+  opacity: 0.4;
+}
+
+.msg-undo,
+.msg-delete-error {
+  grid-column: 2;
+  font-size: 1rem;
+  color: var(--ink-soft);
+}
+
+.msg-delete-error {
+  color: var(--danger);
 }
 
 .chat-input-row {
@@ -844,6 +903,45 @@ a {
 .blocked-error {
   flex-basis: 100%;
   color: var(--danger);
+}
+
+.delete-account {
+  display: grid;
+  gap: 10px;
+  font-size: 1.1rem;
+}
+
+.delete-account p,
+.delete-account ul {
+  margin: 0;
+}
+
+.delete-account input {
+  max-width: 220px;
+  font-family: var(--font-body);
+  font-size: 1.15rem;
+  padding: 8px 10px;
+  border: var(--border-w) solid var(--ink);
+  border-radius: 0;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.delete-account input:focus {
+  outline: 3px solid var(--danger);
+  outline-offset: 0;
+}
+
+.delete-account .btn-danger {
+  justify-self: start;
+}
+
+.delete-error {
+  color: var(--danger);
+}
+
+.delete-error:empty {
+  display: none;
 }
 
 /* The card: on the profile page's preview and in chat's profile popups. */

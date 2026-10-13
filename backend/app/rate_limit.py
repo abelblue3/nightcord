@@ -53,4 +53,7 @@ def user_or_ip_key(request: Request) -> str:
     return client_ip(request)
 
 
-limiter = Limiter(key_func=client_ip)
+# key_style="endpoint": one budget per route, whatever ids are in the URL.
+# slowapi's default counts each URL on its own, so /rooms/1/... and
+# /rooms/2/... (or every message id) would each get a fresh limit.
+limiter = Limiter(key_func=client_ip, key_style="endpoint")

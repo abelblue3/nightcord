@@ -1,7 +1,7 @@
 import './sentry.js';
 import './style.css';
 import { loadClerk } from './clerk.js';
-import { checkSignupEmail, clearSession, startSession } from './api.js';
+import { checkSignupEmail, clearSession, SIGN_IN_NOTICE_KEY, startSession } from './api.js';
 import { getBrowserTimezone } from './nightGate.js';
 import { guardSignupEmail } from './signupEmailGuard.js';
 import { initConsentBanner } from './consentBanner.js';
@@ -13,8 +13,8 @@ import { loadingLine } from './ui.js';
 // nightcord account, which is where the college-email rule is enforced.
 
 // Clerk may reload this page after signing someone in or out, so a message
-// from a refused sign-in is carried across the reload.
-const PENDING_ERROR_KEY = 'nightcord_auth_error';
+// (a refused sign-in, a deleted account) is carried across the reload.
+const PENDING_ERROR_KEY = SIGN_IN_NOTICE_KEY;
 
 init();
 

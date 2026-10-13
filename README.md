@@ -183,9 +183,15 @@ no session cookie, and ordinary requests never call Clerk.
   socials (each shown or hidden), projects, and `use_photo` to swap the pixel
   avatar for your Google/Microsoft photo. School and timezone are read-only.
   Sign-in only — works outside night hours too
+- `DELETE /me` — delete your account. The Clerk user is deleted first (if
+  Clerk can't be reached: 502, nothing changed). Then the row is wiped, not
+  removed: profile cleared, email and username freed (the same email can sign
+  up again as a new account), blocks removed. Messages stay, shown as
+  "deleted student"; reports and consent records are kept. Sign-in only,
+  5 per hour
 - `GET /users/{id}/profile` — another student's public profile: no email,
   the name only if they show it, and only their visible socials (auth). A
-  block either way makes it a 404
+  block either way, or a deleted account, makes it a 404
 - `GET /me/blocks` / `PUT /me/blocks/{id}` / `DELETE /me/blocks/{id}` — the
   students you've blocked; block; unblock. You stop seeing a blocked
   student's messages (history and live) and profile, they can't open yours,
@@ -197,6 +203,10 @@ no session cookie, and ordinary requests never call Clerk.
   includes them. Sign-in only, 10 per hour (see "Reviewing reports" below)
 - `GET /rooms` / `POST /rooms` — list / create chat rooms (auth + night gate)
 - `GET /rooms/{room_id}/messages` — chat history for a room, with author names, minus anyone you blocked (auth + night gate)
+- `DELETE /rooms/{room_id}/messages/{message_id}` — delete one of your own
+  messages, for everyone: it leaves history and every page in the room gets
+  `{"type": "deleted", "id": …, "room_id": …}` on the chat socket. 403 for
+  someone else's. Sign-in only, 30 per minute. Reports keep their own copy
 - `POST /rooms/{room_id}/video-token` — a LiveKit token to join the room's video call (auth + night gate);
   it lasts 10 minutes (never past 6am at the student's school) and allows camera and mic only. Needs `LIVEKIT_URL`,
   `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`; without them it returns 503
@@ -254,7 +264,10 @@ Chat also limits each connection to 5 messages per 5 seconds; extra messages
 are dropped, and a connection that keeps flooding is disconnected. History
 loads 50 messages at a time (`GET /rooms/{id}/messages?before=<id>`); after a
 dropped connection comes back, the page fetches what it missed with
-`?after=<id>`. Room creation is limited to 10 per hour per student.
+`?after=<id>`. Room creation is limited to 10 per hour per student. Each
+endpoint's limit is one budget per student (or per IP when signed out),
+whatever ids are in the URL — fetching tokens for many rooms, or deleting
+many messages, all counts against the same limit.
 
 campus-time can't yet search by email domain, so the domain → institution
 step uses the bundled `school_domains.json` above. Once it can, that file and

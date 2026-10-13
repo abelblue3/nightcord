@@ -2,7 +2,7 @@
 // Kept apart from the page so it can be tested on its own.
 //
 // ctx: currentUserId, lampOn(), chatHidden(), hiddenVideos(), inCall(), and
-// the actions (viewProfile, copy, report, block, lamp, openChat, showVideos,
+// the actions (viewProfile, copy, deleteMessage, report, block, lamp, openChat, showVideos,
 // myProfile, logOut).
 
 export function roomMenuItems(target, ctx) {
@@ -24,7 +24,9 @@ export function roomMenuItems(target, ctx) {
       },
       { label: 'Copy message', action: () => actions.copy(text) },
     ];
-    if (userId !== ctx.currentUserId) {
+    if (userId === ctx.currentUserId) {
+      items.push({ label: 'Delete message', action: () => actions.deleteMessage(msg) });
+    } else {
       const messageId = Number(msg.dataset.messageId) || undefined;
       items.push(
         { label: `Report ${name}…`, action: () => actions.report(userId, name, messageId) },

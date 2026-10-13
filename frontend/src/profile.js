@@ -1,6 +1,7 @@
 import './sentry.js';
 import './style.css';
-import { getMyProfile, listBlocks, requireAuth, unblockStudent, updateMyProfile } from './api.js';
+import { deleteAccount, getMyProfile, listBlocks, requireAuth, signOut, unblockStudent, updateMyProfile } from './api.js';
+import { initAccountDelete } from './accountDelete.js';
 import { renderAvatar } from './avatar.js';
 import { renderBlockedList } from './blockedList.js';
 import { initAvatarMenu } from './avatarMenu.js';
@@ -56,6 +57,10 @@ async function init() {
   listBlocks()
     .then((students) => renderBlockedList(blockedList, students, { unblock: unblockStudent }))
     .catch((err) => (blockedList.textContent = `ERR: ${err.message}`));
+  initAccountDelete(document.getElementById('delete-section'), {
+    deleteAccount,
+    onDeleted: () => signOut('Your account was deleted.'),
+  });
 
   const renderPreview = () => preview.replaceChildren(renderProfileCard(previewProfile(formToPayload(form), own)));
   renderPreview();

@@ -1,13 +1,23 @@
 import './sentry.js';
 import './style.css';
-import { requireAuth, getUser, signOut, getRoomMessages, connectRoomSocket, listBlocks, blockStudent } from './api.js';
+import {
+  requireAuth,
+  getUser,
+  signOut,
+  getRoomMessages,
+  connectRoomSocket,
+  listBlocks,
+  blockStudent,
+  deleteMessage,
+} from './api.js';
 import { renderClosedScreen, watchForClose } from './closedScreen.js';
 import { initConsentBanner } from './consentBanner.js';
 import { getTheme, initThemeToggle } from './theme.js';
 import { initContextMenu } from './contextMenu.js';
 import { roomMenuItems } from './roomMenu.js';
 import { initAvatarMenu } from './avatarMenu.js';
-import { renderMessage } from './chatMessage.js';
+import { applyDeletion, renderMessage } from './chatMessage.js';
+import { startDelete } from './messageDelete.js';
 import { createWindow } from './floatingWindow.js';
 import { openProfilePopup } from './profilePopup.js';
 import { openReportWindow } from './reportWindow.js';
@@ -130,10 +140,29 @@ async function init() {
     },
   };
 
+  // Your own messages: fade with a 10-second Undo, then deleted for everyone.
+  // Leaving the page sends any still counting down.
+  const pendingDeletes = new Map(); // message id -> countdown
+  function deleteOwn(msg) {
+    const id = Number(msg.dataset.messageId);
+    if (pendingDeletes.has(id)) return;
+    pendingDeletes.set(
+      id,
+      startDelete(msg, {
+        send: ({ keepalive }) => deleteMessage(roomId, id, { keepalive }),
+        onDone: () => pendingDeletes.delete(id),
+      }),
+    );
+  }
+  window.addEventListener('pagehide', () => {
+    for (const pending of pendingDeletes.values()) pending.sendNow();
+  });
+
   const showMessage = (msg) =>
     renderMessage(msg, {
       currentUser,
       onOpenProfile: (userId, name, at) => openProfilePopup(userId, name, at, blockHandlers),
+      onDelete: deleteOwn,
     });
 
   // The newest message shown, so a reconnect can fetch what came after it.
@@ -230,6 +259,7 @@ async function init() {
         viewProfile: (userId, name, at) => openProfilePopup(userId, name, at, blockHandlers),
         copy: (text) => navigator.clipboard?.writeText(text),
         report: blockHandlers.onReport, // with the right-clicked message
+        deleteMessage: deleteOwn,
         block: (userId) =>
           blockStudent(userId)
             .then(() => blockHandlers.onBlock(userId))
@@ -287,6 +317,7 @@ async function init() {
 
     socket.addEventListener('message', (event) => {
       const data = JSON.parse(event.data);
+      if (applyDeletion(chatLog, heldMessages, data)) return; // someone deleted theirs
       if (heldMessages) heldMessages.push(data);
       else receiveMessage(data);
     });

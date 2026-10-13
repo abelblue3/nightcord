@@ -30,6 +30,7 @@ beforeEach(() => {
       copy: vi.fn(),
       block: vi.fn(),
       report: vi.fn(),
+      deleteMessage: vi.fn(),
       lamp: vi.fn(),
       openChat: vi.fn(),
       showVideos: vi.fn(),
@@ -54,9 +55,13 @@ describe("the room's right-click menu", () => {
     expect(ctx.actions.block).toHaveBeenCalledWith(2);
   });
 
-  it('offers no Block on your own message', () => {
+  it('offers Delete, not Report or Block, on your own message', () => {
     const msg = message(1, 'me_myself', 'hi');
-    expect(labels(roomMenuItems(msg, ctx))).toEqual(['View profile', 'Copy message']);
+    const items = roomMenuItems(msg, ctx);
+
+    expect(labels(items)).toEqual(['View profile', 'Copy message', 'Delete message']);
+    items[2].action();
+    expect(ctx.actions.deleteMessage).toHaveBeenCalledWith(msg);
   });
 
   it('offers the room actions anywhere else', () => {

@@ -1,10 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
+from app import clerk_auth
 from app.auth import email_domain, get_current_user
 from app.campus_time import school_name
 from app.database import get_db
-from app.models import Block, User
+from app.models import Block, User, utcnow
+from app.routers.auth import clerk_unavailable, logger
 from app.rate_limit import limiter, user_or_ip_key
 from app.schemas import OwnProfileOut, ProfileUpdate, PublicProfileOut
 
@@ -14,6 +17,8 @@ router = APIRouter(tags=["profiles"])
 
 TEXT_FIELDS = ("name", "pronouns", "bio", "status", "major", "year")
 LIST_FIELDS = ("interests", "courses")
+# Wiped when an account is deleted.
+PROFILE_FIELDS = TEXT_FIELDS + LIST_FIELDS + ("avatar_url", "provider_photo_url", "socials", "projects", "timezone")
 
 
 def school_of(user: User) -> str | None:
@@ -105,7 +110,7 @@ def get_public_profile(
     # A block either way hides the profile, worded like a missing student so
     # the blocked one isn't told.
     blocked = db.get(Block, (viewer.id, user_id)) or db.get(Block, (user_id, viewer.id))
-    if not person or blocked:
+    if not person or person.deleted_at or blocked:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such student.")
     return PublicProfileOut(
         id=person.id,
@@ -123,3 +128,31 @@ def get_public_profile(
         socials={kind: s["handle"] for kind, s in (person.socials or {}).items() if s.get("visible")},
         projects=person.projects or [],
     )
+
+
+@router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("5/hour", key_func=user_or_ip_key)
+def delete_my_account(request: Request, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> Response:
+    """Deletes your account. The Clerk user goes first (signed out
+    everywhere); if Clerk can't be reached nothing changes, so it can be
+    retried. Then the row is wiped rather than removed -- messages, rooms,
+    reports and consent records point at it: messages show as "deleted
+    student", and the email and username are free to use again.
+    """
+    try:
+        clerk_auth.delete_user(user.clerk_user_id)
+    except clerk_auth.ClerkAPIError:
+        logger.exception("Clerk delete_user failed for an account deletion")
+        raise clerk_unavailable()
+
+    user.deleted_at = utcnow()
+    user.clerk_user_id = None
+    user.email = f"deleted-{user.id}@deleted.invalid"
+    # A hyphen no username can have, so this never collides with a real one.
+    user.display_name = f"deleted-{user.id}"
+    for field in PROFILE_FIELDS:
+        setattr(user, field, None)
+    user.show_name = False
+    db.query(Block).filter(or_(Block.blocker_id == user.id, Block.blocked_id == user.id)).delete()
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

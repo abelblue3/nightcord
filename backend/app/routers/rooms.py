@@ -1,13 +1,16 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from anyio import from_thread
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from livekit import api as livekit
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app import gate
+from app.auth import get_current_user
 from app.config import settings
+from app.connection_manager import manager
 from app.database import get_db
 from app.gate import require_night_access
 from app.models import Block, Message, Room, User
@@ -83,6 +86,32 @@ def get_room_messages(
 
     newest_first = query.order_by(Message.id.desc()).limit(limit).all()
     return list(reversed(newest_first))
+
+
+@router.delete("/{room_id}/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+@limiter.limit("30/minute", key_func=user_or_ip_key)
+def delete_message(
+    request: Request,
+    room_id: int,
+    message_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    """Deletes one of your own messages, for everyone: it's gone from
+    history, and each page in the room is told to drop it. Sign-in only, so
+    it works in the daytime too. Reports keep their own copy.
+    """
+    message = db.get(Message, message_id)
+    if not message or message.room_id != room_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found.")
+    if message.user_id != current_user.id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own messages.")
+    db.delete(message)
+    db.commit()
+    # A sync route runs in one of anyio's worker threads, so the async
+    # broadcast is handed back to the event loop.
+    from_thread.run(manager.broadcast, room_id, {"type": "deleted", "id": message_id, "room_id": room_id})
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{room_id}/video-token", response_model=VideoTokenOut)
