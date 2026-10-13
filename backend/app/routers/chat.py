@@ -6,6 +6,7 @@ from collections import deque
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, WebSocket, WebSocketException, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -14,7 +15,7 @@ from app.auth import session_claims
 from app.config import settings
 from app.connection_manager import manager
 from app.database import get_session_factory
-from app.models import Message, Room, User
+from app.models import Block, Message, Room, User
 
 router = APIRouter(tags=["chat"])
 
@@ -121,6 +122,11 @@ def save_message(db: Session, room_id: int, user_id: int, content: str) -> tuple
     return saved
 
 
+def blockers_of(db: Session, user_id: int) -> set[int]:
+    """The students who blocked this one; they don't get its messages."""
+    return set(db.scalars(select(Block.blocker_id).where(Block.blocked_id == user_id)))
+
+
 # Browsers can't put an Authorization header on a WebSocket, so the Clerk
 # session token arrives as a message instead: {"type":"auth","token":...},
 # first thing after connecting and then every 40 seconds from the page.
@@ -194,7 +200,7 @@ async def room_chat(
             return
         gate_closes_at = gate.night_ends_at(user_tz).timestamp()
 
-    manager.connect(room_id, websocket)
+    manager.connect(room_id, websocket, user.id)
     limiter = SendLimiter()
     # Whatever ends this loop -- a normal disconnect or an unexpected error --
     # the connection must come out of the room's broadcast list. A dead socket
@@ -234,8 +240,10 @@ async def room_chat(
             if content is None:
                 continue
 
-            message_id, created_at = await run_db(
-                session_factory, lambda db: save_message(db, room_id, user.id, content)
+            # Who blocked the sender is read for every message, so a block
+            # made while the sockets are open applies straight away.
+            (message_id, created_at), blockers = await run_db(
+                session_factory, lambda db: (save_message(db, room_id, user.id, content), blockers_of(db, user.id))
             )
 
             await manager.broadcast(
@@ -249,6 +257,7 @@ async def room_chat(
                     "content": content,
                     "created_at": created_at.isoformat(),
                 },
+                skip_user_ids=blockers,
             )
     finally:
         manager.disconnect(room_id, websocket)
