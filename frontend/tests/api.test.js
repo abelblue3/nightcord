@@ -27,6 +27,9 @@ import {
   blockStudent,
   unblockStudent,
   reportStudent,
+  deleteMessage,
+  deleteAccount,
+  SIGN_IN_NOTICE_KEY,
   checkSignupEmail,
   syncConsent,
   REAUTH_INTERVAL_MS,
@@ -120,6 +123,15 @@ describe('signOut', () => {
     expect(signOutOfClerk).toHaveBeenCalled();
     expect(getUser()).toBeNull();
     expect(window.location.href).toBe('/index.html');
+  });
+
+  it('can leave a note for the sign-in page', async () => {
+    captureRedirects();
+
+    await signOut('Your account was deleted.');
+
+    expect(sessionStorage.getItem(SIGN_IN_NOTICE_KEY)).toBe('Your account was deleted.');
+    sessionStorage.clear();
   });
 
   it('still leaves if Clerk sign-out fails', async () => {
@@ -371,6 +383,35 @@ describe('reportStudent', () => {
     expect(url).toMatch(/\/reports$/);
     expect(options.method).toBe('POST');
     expect(JSON.parse(options.body)).toEqual({ reported_id: 4, reason: 'spam', room_id: 7 });
+    expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
+  });
+});
+
+describe('deleteMessage', () => {
+  it('sends DELETE for that message, signed in, with keepalive when leaving', async () => {
+    mockFetchSequence([204, null], [204, null]);
+
+    await deleteMessage(7, 55);
+    await deleteMessage(7, 56, { keepalive: true });
+
+    const [[firstUrl, first], [, second]] = global.fetch.mock.calls;
+    expect(firstUrl).toMatch(/\/rooms\/7\/messages\/55$/);
+    expect(first.method).toBe('DELETE');
+    expect(first.headers.Authorization).toBe('Bearer clerk-token-1');
+    expect(first.keepalive).toBeFalsy();
+    expect(second.keepalive).toBe(true);
+  });
+});
+
+describe('deleteAccount', () => {
+  it('sends DELETE /me, signed in', async () => {
+    mockFetchOnce(204, null);
+
+    await deleteAccount();
+
+    const [url, options] = global.fetch.mock.calls[0];
+    expect(url).toMatch(/\/me$/);
+    expect(options.method).toBe('DELETE');
     expect(options.headers.Authorization).toBe('Bearer clerk-token-1');
   });
 });

@@ -31,7 +31,8 @@ def block(request: Request, user_id: int, db: Session = Depends(get_db), user: U
     opening yours. Blocking someone already blocked changes nothing."""
     if user_id == user.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="You can't block yourself.")
-    if not db.get(User, user_id):
+    target = db.get(User, user_id)
+    if not target or target.deleted_at:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No such student.")
     if not db.get(Block, (user.id, user_id)):
         db.add(Block(blocker_id=user.id, blocked_id=user_id))

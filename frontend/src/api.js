@@ -35,9 +35,15 @@ export function clearSession() {
   localStorage.removeItem(USER_KEY);
 }
 
-// Sends someone back to the sign-in page, signed out of Clerk in this browser.
-export async function signOut() {
+// A one-time message the sign-in page shows after the redirect (e.g. a
+// refused sign-in, or "Your account was deleted."). Session-only, essential.
+export const SIGN_IN_NOTICE_KEY = 'nightcord_auth_error';
+
+// Sends someone back to the sign-in page, signed out of Clerk in this browser,
+// with an optional note for that page.
+export async function signOut(notice) {
   clearSession();
+  if (notice) sessionStorage.setItem(SIGN_IN_NOTICE_KEY, notice);
   try {
     await signOutOfClerk();
   } catch {
@@ -70,7 +76,7 @@ class ApiError extends Error {
   }
 }
 
-async function request(path, { method = 'GET', body, auth = false, retried = false } = {}) {
+async function request(path, { method = 'GET', body, auth = false, retried = false, keepalive = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
   // Clerk session tokens live about a minute; getSessionToken() refreshes
   // as needed, so every request asks for one.
@@ -82,6 +88,7 @@ async function request(path, { method = 'GET', body, auth = false, retried = fal
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
+    keepalive, // lets a request sent while leaving the page finish
   });
 
   const data = await res.json().catch(() => ({}));
@@ -93,7 +100,7 @@ async function request(path, { method = 'GET', body, auth = false, retried = fal
         // Signed in with Clerk but the nightcord account isn't linked yet
         // (e.g. a sign-in that skipped the index page). Link it, then retry.
         await startSession(getBrowserTimezone());
-        return request(path, { method, body, auth, retried: true });
+        return request(path, { method, body, auth, retried: true, keepalive });
       }
       // Session expired or revoked ("log out of all devices" elsewhere).
       await signOut();
@@ -192,6 +199,20 @@ export async function reportStudent({ reportedId, reason, roomId, messageId, det
     body: { reported_id: reportedId, reason, room_id: roomId, message_id: messageId, details },
     auth: true,
   });
+}
+
+// Deletes one of your own messages, for everyone (see messageDelete.js).
+export async function deleteMessage(roomId, messageId, { keepalive = false } = {}) {
+  return request(`/rooms/${encodeURIComponent(roomId)}/messages/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+    auth: true,
+    keepalive,
+  });
+}
+
+// Deletes your account (see accountDelete.js); the caller then signs out.
+export async function deleteAccount() {
+  return request('/me', { method: 'DELETE', auth: true });
 }
 
 // A LiveKit token for the room's video call (see video.js).

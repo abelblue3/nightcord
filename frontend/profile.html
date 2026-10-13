@@ -140,6 +140,21 @@
         <h3>Blocked students</h3>
         <p class="hint">You don't see their messages or video, and they can't open your profile. They aren't told.</p>
         <ul class="blocked-list" id="blocked-list" aria-label="Blocked students"></ul>
+
+        <h3>Delete account</h3>
+        <div class="delete-account" id="delete-section">
+          <p>Deleting your account:</p>
+          <ul class="hint">
+            <li>removes your profile, email and username, and signs you out everywhere;</li>
+            <li>keeps your messages, shown as “deleted student”;</li>
+            <li>keeps reports and the record of your cookie choices;</li>
+            <li>can't be undone, but you can sign up again later as a new account.</li>
+          </ul>
+          <label class="delete-confirm-label" for="delete-confirm">Type DELETE to confirm</label>
+          <input id="delete-confirm" type="text" autocomplete="off" spellcheck="false" />
+          <button class="btn btn-danger" id="delete-account" type="button">Delete my account</button>
+          <p class="delete-error" id="delete-error" role="alert"></p>
+        </div>
       </section>
 
       <footer class="site-footer">

@@ -3,6 +3,9 @@ from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Index, Integer, Stri
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
+DELETED_NAME = "deleted student"  # shown for the messages of a deleted account
+
+
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
@@ -23,6 +26,10 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(20), nullable=False, unique=True, index=True)
     timezone: Mapped[str] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # Set when the student deletes their account. The row stays (messages,
+    # rooms, reports and consent records point at it) but is wiped, and their
+    # messages show as "deleted student".
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     # Profile. Everything is optional; the real name shows only with
     # show_name, and each social only when marked visible.
@@ -75,11 +82,11 @@ class Message(Base):
         """Lets MessageOut (from_attributes) include the author's name, so
         chat history shows the same names live messages do.
         """
-        return self.author.display_name
+        return DELETED_NAME if self.author.deleted_at else self.author.display_name
 
     @property
     def avatar_url(self) -> str | None:
-        return self.author.avatar_url
+        return None if self.author.deleted_at else self.author.avatar_url
 
 
 class Block(Base):
