@@ -121,6 +121,7 @@
 
         <h3>Appearance</h3>
         <label class="choice"><input type="checkbox" id="lamp-setting" /> Lamp: warmer colors</label>
+        <label class="choice"><input type="checkbox" id="cursor-setting" /> Pixel cursor (off: your system cursor)</label>
 
         <h3>Account</h3>
         <dl class="account-facts">
@@ -135,6 +136,10 @@
           Your university and timezone come from your school email, and the timezone decides when rooms open,
           so they can't be changed here. To change your password, use "Forgot password?" on the sign-in page.
         </p>
+
+        <h3>Blocked students</h3>
+        <p class="hint">You don't see their messages or video, and they can't open your profile. They aren't told.</p>
+        <ul class="blocked-list" id="blocked-list" aria-label="Blocked students"></ul>
       </section>
 
       <footer class="site-footer">

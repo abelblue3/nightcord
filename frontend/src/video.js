@@ -66,7 +66,7 @@ function deviceButton(device) {
   return button;
 }
 
-export function initVideo(roomId, { joinButton, showButton, layer, onError, onCallChange = () => {} }) {
+export function initVideo(roomId, { joinButton, showButton, layer, onError, onCallChange = () => {}, isBlocked = () => false }) {
   let room = null;
   const windows = new Map(); // participant identity -> { win }
   const hidden = new Set(); // the windows closed with ×
@@ -147,6 +147,12 @@ export function initVideo(roomId, { joinButton, showButton, layer, onError, onCa
     return entry.win;
   }
 
+  // A blocked student gets no window, and their tracks are switched off so
+  // their sound doesn't play either (LiveKit can't hide them for us).
+  function setListening(participant, on) {
+    for (const publication of participant?.trackPublications?.values() ?? []) publication.setSubscribed?.(on);
+  }
+
   function removeWindow(participant) {
     const entry = windows.get(participant.identity);
     entry?.win.remove();
@@ -221,9 +227,14 @@ export function initVideo(roomId, { joinButton, showButton, layer, onError, onCa
       // default; the camera is already released when switched off).
       room = new Room({ publishDefaults: { stopMicTrackOnMute: true } });
       room
-        .on(RoomEvent.ParticipantConnected, (participant) => windowFor(participant))
+        .on(RoomEvent.ParticipantConnected, (participant) => {
+          if (!isBlocked(participant.identity)) windowFor(participant);
+        })
         .on(RoomEvent.ParticipantDisconnected, removeWindow)
-        .on(RoomEvent.TrackSubscribed, (track, _publication, participant) => attach(track, participant))
+        .on(RoomEvent.TrackSubscribed, (track, publication, participant) => {
+          if (isBlocked(participant.identity)) publication.setSubscribed?.(false);
+          else attach(track, participant);
+        })
         .on(RoomEvent.TrackUnsubscribed, detach)
         // Your own camera shows in your window; your own mic isn't played back.
         .on(RoomEvent.LocalTrackPublished, (publication, participant) => {
@@ -235,7 +246,9 @@ export function initVideo(roomId, { joinButton, showButton, layer, onError, onCa
         .on(RoomEvent.Disconnected, reset);
       await room.connect(url, token);
       windowFor(room.localParticipant, true);
-      for (const participant of room.remoteParticipants.values()) windowFor(participant);
+      for (const participant of room.remoteParticipants.values()) {
+        if (!isBlocked(participant.identity)) windowFor(participant);
+      }
       joinButton.hidden = true;
       onCallChange(true);
     } catch (err) {
@@ -252,5 +265,20 @@ export function initVideo(roomId, { joinButton, showButton, layer, onError, onCa
   return {
     // For the chat page: 6am or a sign-out ends the call with the chat.
     leave,
+    hiddenCount: () => hidden.size, // windows closed with ×
+
+    // Blocking or unblocking someone mid-call (identity = their user id).
+    hide(userId) {
+      const participant = room?.getParticipantByIdentity(String(userId));
+      if (!participant) return;
+      removeWindow(participant);
+      setListening(participant, false);
+    },
+    show(userId) {
+      const participant = room?.getParticipantByIdentity(String(userId));
+      if (!participant) return;
+      windowFor(participant); // even with their camera and mic off
+      setListening(participant, true);
+    },
   };
 }
